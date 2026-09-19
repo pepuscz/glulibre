@@ -5,7 +5,8 @@ personal diagnostic workflow for Libre 2/2+ plus simple meal capture.
 
 ## Working checkpoint
 
-- Branch: `debug/libre-pairing`
+- Stable/default branch: `main`
+- Original development branch: `debug/libre-pairing`
 - Verified on: 2026-09-19
 - Sensor: Libre 2 Plus EU 7F
 - Verified flow: one activation scan, 60-minute warm-up, one streaming handoff,
@@ -52,3 +53,7 @@ Do not commit API keys, signing credentials, device logs, or DerivedData.
 
 This is experimental software and is not a substitute for the manufacturer's
 app, a blood glucose meter, or medical advice.
+
+The fork's `master` branch is retained as an upstream 7.x mirror. Porting this
+checkpoint to that architecture should happen separately and be revalidated on
+real hardware before replacing `main`.
