@@ -66,6 +66,8 @@
 	<string>Connect to CGM Transmitter and M5Stack</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Connect to CGM Transmitter and M5Stack</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Photograph meals so you can compare food with glucose responses.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>To create events with BG reading values, so that they can be viewed on Apple Watch and CarPlay</string>
 	<key>NSCalendarsUsageDescription</key>
@@ -73,9 +75,11 @@
 	<key>NSContactsUsageDescription</key>
 	<string>To update the contact photo with an image showing the current BG values</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Store bloodglucose readings</string>
+	<string>Read glucose and meal nutrition so you can compare foods with glucose responses.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Store bloodglucose readings</string>
+	<string>Store glucose readings and confirmed meal nutrition.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Select a meal photo when the camera is unavailable.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

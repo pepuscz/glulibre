@@ -20,8 +20,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // MARK: - Application Life Cycle
     
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+#if DEBUG
+        // This development build is used to diagnose Libre NFC/BLE pairing.
+        // Enable every existing trace sink before the first application trace is emitted.
+        UserDefaults.standard.NSLogEnabled = true
+        UserDefaults.standard.OSLogEnabled = true
+        UserDefaults.standard.addDebugLevelLogsInTraceFileAndNSLog = true
+        UserDefaults.standard.showDeveloperSettings = true
+#endif
         trace("****************************************", log: log, category: ConstantsLog.categoryAppDelegate, type: .info)
         trace("*** in didFinishLaunchingWithOptions ***", log: log, category: ConstantsLog.categoryAppDelegate, type: .info)
+#if DEBUG
+        trace("LIBRE_DIAG debug tracing enabled", log: log, category: ConstantsLog.categoryAppDelegate, type: .info)
+#endif
         trace("****************************************", log: log, category: ConstantsLog.categoryAppDelegate, type: .info)
         return true
     }
@@ -84,4 +95,3 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 }
-

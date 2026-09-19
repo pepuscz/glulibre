@@ -470,6 +470,7 @@ extension UserDefaults {
         /// - Libre patch info - used in Libre 2 setup - should be read first eg via bubble or mm and then used in Libre 2 communication
         /// - stored as data as read from transmitter
         case librePatchInfo = "librePatchInfo"
+        case libreInitialPatchInfo = "libreInitialPatchInfo"
         
         // heartbeat
         /// the last heartbeat connection timestamp
@@ -2646,6 +2647,18 @@ extension UserDefaults {
             set(newValue, forKey: Key.librePatchInfo.rawValue)
         }
     }
+
+    /// Patch info captured by the NFC command that successfully enabled
+    /// Libre 2 BLE streaming. Unlike the current NFC patch info, this value
+    /// must remain stable because it is part of every BLE unlock payload.
+    var libreInitialPatchInfo: Data? {
+        get {
+            object(forKey: Key.libreInitialPatchInfo.rawValue) as? Data
+        }
+        set {
+            set(newValue, forKey: Key.libreInitialPatchInfo.rawValue)
+        }
+    }
     
     /// in case an NFC scan fails, this value will be set to true.
     /// bluetoothPeripheralViewController will observe this value and if it becomes set to true, it should disconnect the transmitter and offer to scan again
@@ -2715,5 +2728,4 @@ extension UserDefaults {
         }
     }
 }
-
 

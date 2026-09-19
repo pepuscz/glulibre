@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import OSLog
+import UserNotifications
 
 #if canImport(CoreNFC)
 @preconcurrency import CoreNFC
@@ -29,6 +30,15 @@ fileprivate enum Subcommand: UInt8, CustomStringConvertible {
         }
     }
 }
+
+#if DEBUG
+/// Diagnostic Libre 2 NFC operations are deliberately split so an activation
+/// scan can never fall through into the normal BLE handoff in the same session.
+enum LibreDebugNFCSessionMode {
+    case activationOnly
+    case enableStreamingOnly
+}
+#endif
 
 // MARK: - Async CoreNFC helpers (avoid capturing self inside SDK callbacks)
 
@@ -91,6 +101,7 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
     
     /// for trace
     private let log = OSLog(subsystem: ConstantsLog.subSystem, category: ConstantsLog.categoryLibreNFC)
+    static let diagnosticWarmupNotificationIdentifierPrefix = "LibreDebugWarmupComplete."
     
     /// will be used to pass back info like sensorUid , patchInfo to delegate
     private(set) weak var libreNFCDelegate: LibreNFCDelegate?
@@ -100,6 +111,92 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
     
     /// use to keep track of if a successful NFC scan has happened
     private var nfcScanSuccessful: Bool = false
+
+#if DEBUG
+    /// A fresh sensor activation and a BLE streaming handoff are separate,
+    /// explicit operations. This mirrors DiaBLE's Activate / RePair controls
+    /// and prevents an automatic fall-through after A1 1B.
+    private let diagnosticMode: LibreDebugNFCSessionMode
+
+    /// A successful activation-only session is not a completed BLE handoff.
+    /// Keep it separate from nfcScanSuccessful so invalidation never starts a
+    /// Bluetooth scan.
+    private var activationOnlySucceeded = false
+
+    static let diagnosticWarmupSeconds: TimeInterval = 60 * 60
+    private static func diagnosticActivationAttemptKey(sensorUID: Data) -> String {
+        // v3 is the first attempt that mirrors DiaBLE's complete activation
+        // transaction, including its immediate 43-block FRAM reread.
+        "LibreDebugUpstreamDiaBLEActivationAttemptIssued.v3." + sensorUID.toHexString()
+    }
+
+    private static func diagnosticActivationAcceptedAtKey(sensorUID: Data) -> String {
+        "LibreDebugDiaBLEActivationAcceptedAt." + sensorUID.toHexString()
+    }
+
+    static func diagnosticActivationAcceptedAt(sensorUID: Data) -> Date? {
+        let timestamp = UserDefaults.standard.double(forKey: diagnosticActivationAcceptedAtKey(sensorUID: sensorUID))
+        return timestamp > 0 ? Date(timeIntervalSince1970: timestamp) : nil
+    }
+
+    static func diagnosticActivationAttemptIssued(sensorUID: Data) -> Bool {
+        UserDefaults.standard.bool(forKey: diagnosticActivationAttemptKey(sensorUID: sensorUID))
+    }
+
+    static func diagnosticWarmupSecondsRemaining(sensorUID: Data, now: Date = Date()) -> TimeInterval? {
+        guard let acceptedAt = diagnosticActivationAcceptedAt(sensorUID: sensorUID) else { return nil }
+        return max(0, diagnosticWarmupSeconds - now.timeIntervalSince(acceptedAt))
+    }
+
+    static func scheduleDiagnosticWarmupNotification(sensorUID: Data) {
+        guard let acceptedAt = diagnosticActivationAcceptedAt(sensorUID: sensorUID) else { return }
+
+        let readyAt = acceptedAt.addingTimeInterval(diagnosticWarmupSeconds)
+        let delay = readyAt.timeIntervalSinceNow
+        guard delay > 0 else { return }
+
+        let center = UNUserNotificationCenter.current()
+        let identifier = diagnosticWarmupNotificationIdentifierPrefix + sensorUID.toHexString()
+
+        let schedule = {
+            let content = UNMutableNotificationContent()
+            content.title = "Libre sensor is ready"
+            content.body = "Open Libre Debug and tap Complete BLE handoff."
+            content.sound = .default
+            if #available(iOS 15.0, *) {
+                content.interruptionLevel = .timeSensitive
+            }
+
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, delay), repeats: false)
+            let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+            center.removePendingNotificationRequests(withIdentifiers: [identifier])
+            center.add(request) { error in
+                let log = OSLog(subsystem: ConstantsLog.subSystem, category: ConstantsLog.categoryLibreNFC)
+                if let error {
+                    xdrip.trace("LIBRE_DIAG failed to schedule warm-up notification: %{public}@", log: log, category: ConstantsLog.categoryLibreNFC, type: .error, error.localizedDescription)
+                } else {
+                    xdrip.trace("LIBRE_DIAG scheduled warm-up notification readyAt=%{public}@ delaySeconds=%{public}@", log: log, category: ConstantsLog.categoryLibreNFC, type: .info, readyAt.description, Int(delay).description)
+                }
+            }
+        }
+
+        center.getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                schedule()
+            case .notDetermined:
+                center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                    if granted { schedule() }
+                }
+            case .denied:
+                let log = OSLog(subsystem: ConstantsLog.subSystem, category: ConstantsLog.categoryLibreNFC)
+                xdrip.trace("LIBRE_DIAG warm-up notification not scheduled because notifications are denied", log: log, category: ConstantsLog.categoryLibreNFC, type: .error)
+            @unknown default:
+                break
+            }
+        }
+    }
+#endif
     
     /// use to keep track of the sensor serial number so that we can pass it back to the delegate
     private var serialNumber: String = ""
@@ -109,9 +206,16 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
     
     // MARK: - initalizer
     
+    #if DEBUG
+    init(libreNFCDelegate: LibreNFCDelegate, diagnosticMode: LibreDebugNFCSessionMode = .enableStreamingOnly) {
+        self.libreNFCDelegate = libreNFCDelegate
+        self.diagnosticMode = diagnosticMode
+    }
+    #else
     init(libreNFCDelegate: LibreNFCDelegate) {
         self.libreNFCDelegate = libreNFCDelegate
     }
+    #endif
     
     // MARK: - public functions
     
@@ -126,7 +230,16 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
             // make sure the this is (re)set to false before we start scanning
             self.nfcScanSuccessful = false
             
+#if DEBUG
+            switch diagnosticMode {
+            case .activationOnly:
+                tagSession.alertMessage = "Hold the top of the iPhone near the sensor until activation is confirmed."
+            case .enableStreamingOnly:
+                tagSession.alertMessage = "Keep the iPhone's top edge on the sensor until TWO strong completion vibrations."
+            }
+#else
             tagSession.alertMessage = TextsLibreNFC.holdTopOfIphoneNearSensor
+#endif
             
             tagSession.begin()
         }
@@ -139,6 +252,7 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
     }
     
     func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
+        xdrip.trace("LIBRE_DIAG NFC session invalidated successful=%{public}@ domain=%{public}@ code=%{public}@ error=%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, self.nfcScanSuccessful.description, (error as NSError).domain, (error as NSError).code.description, error.localizedDescription)
         if let readerError = error as? NFCReaderError {
             switch readerError.code {
             case .readerSessionInvalidationErrorSessionTimeout:
@@ -158,6 +272,13 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
                 xdrip.trace("%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, debugInfo)
             }
             
+#if DEBUG
+            if self.activationOnlySucceeded {
+                xdrip.trace("LIBRE_DIAG activation-only NFC session completed; deliberately not starting BLE or another NFC scan", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info)
+                self.libreNFCDelegate?.activationCompleted()
+                return
+            }
+#endif
             // if we have generated a successful NFC scan and been able to correctly parse out the needed data, then inform the user and start BLE scanning. If not, inform the user and offer to scan again
             if self.nfcScanSuccessful {
                 xdrip.trace("NFC: passing NFC scan successful to the delegate and starting BLE scanning", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info)
@@ -171,8 +292,11 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
             } else {
                 xdrip.trace("NFC: passing NFC scan error to the delegate", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info)
                 
-                // play "failed" vibration
+                // In the diagnostic handoff build, vibration has one meaning:
+                // the six-byte streaming response was received successfully.
+#if !DEBUG
                 AudioServicesPlaySystemSound(1107)
+#endif
                 
                 self.libreNFCDelegate?.nfcScanResult(successful: false)
             }
@@ -186,6 +310,7 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
         guard case .iso15693(let tag) = firstTag else { return }
 
         Task { @MainActor in
+            session.alertMessage = "Sensor found. Keep holding while its state is verified."
             let blocks = 43
             let requestBlocks = 3
             let requests = Int(ceil(Double(blocks) / Double(requestBlocks)))
@@ -285,17 +410,39 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
             for i in 0 ..< requests {
                 let start = UInt8(i * requestBlocks)
                 let end = UInt8(i * requestBlocks + (i == requests - 1 ? (remainder == 0 ? requestBlocks : remainder) : requestBlocks) - (requestBlocks > 1 ? 1 : 0))
-                do {
-                    let blocks = try await readMultipleBlocksAsync(tag: tag, blockRange: NSRange(start ... end))
-                    for j in 0 ..< blocks.count {
-                        dataArray[i * requestBlocks + j] = blocks[j]
-                    }
-                } catch {
-                    let debugInfo = "NFC: error while reading multiple blocks (#\(i * requestBlocks) - #\(i * requestBlocks + (i == requests - 1 ? (remainder == 0 ? requestBlocks : remainder) : requestBlocks) - (requestBlocks > 1 ? 1 : 0))): " + error.localizedDescription
-                    xdrip.trace("%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, debugInfo)
+                var blockRetry = 0
 
-                    session.invalidate(errorMessage: TextsLibreNFC.nfcErrorMessageScanFailed)
-                    if i != requests - 1 { return }
+                while true {
+                    do {
+                        let blocks = try await readMultipleBlocksAsync(tag: tag, blockRange: NSRange(start ... end))
+                        for j in 0 ..< blocks.count {
+                            dataArray[i * requestBlocks + j] = blocks[j]
+                        }
+                        break
+                    } catch {
+                        let debugInfo = "NFC: error while reading multiple blocks (#\(start) - #\(end)), retry \(blockRetry)/\(retries): " + error.localizedDescription
+                        xdrip.trace("%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, debugInfo)
+
+                        guard blockRetry < retries else {
+                            session.invalidate(errorMessage: TextsLibreNFC.nfcErrorMessageScanFailed)
+                            return
+                        }
+
+                        blockRetry += 1
+                        session.alertMessage = TextsLibreNFC.holdTopOfIphoneNearSensor
+                        try? await Task.sleep(nanoseconds: 150_000_000)
+
+                        // A transient ISO15693 field drop invalidates the tag
+                        // connection but not necessarily the reader session.
+                        // Reconnect to the same detected tag and retry only the
+                        // missing chunk instead of discarding all prior blocks.
+                        do {
+                            try await session.connect(to: firstTag)
+                            xdrip.trace("NFC: reconnected to tag for blocks #%{public}@ - #%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, start.description, end.description)
+                        } catch {
+                            xdrip.trace("NFC: reconnect attempt for blocks #%{public}@ - #%{public}@ failed: %{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, start.description, end.description, error.localizedDescription)
+                        }
+                    }
                 }
             }
 
@@ -328,9 +475,228 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
                 return
             }
 
+            let sensorType = LibreSensorType.type(patchInfo: patchInfo.toHexString())
+            xdrip.trace("LIBRE_DIAG NFC payload sensorType=%{public}@ sensorUID=%{public}@ patchInfo=%{public}@ framBytes=%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, sensorType?.description ?? "unknown", sensorUID.toHexString(), patchInfo.toHexString(), fram.count.description)
+
             self.libreNFCDelegate?.received(sensorUID: sensorUID, patchInfo: patchInfo)
             self.traceSensorUID(sensorUID: sensorUID)
             self.tracePatchInfo(patchInfo: patchInfo)
+
+#if DEBUG
+            // Decode the sensor state before issuing any state-changing
+            // command. A fresh Libre reports state 0x01 and age 0; enabling
+            // streaming alone does not activate it or start BLE broadcasts.
+            func decodedStateAndAge(_ encryptedFram: Data) -> (state: LibreSensorState, age: Int, stateByte: UInt8, decodingPatchInfo: Data)? {
+                guard let sensorType,
+                      encryptedFram.count >= 318
+                else { return nil }
+
+                // A Libre 2's current NFC patch info can differ from the
+                // value captured when streaming was enabled. Try both, but
+                // never trust state/age unless all three FRAM CRCs validate.
+                var candidatePatchInfos = [patchInfo]
+                if let initialPatchInfo = UserDefaults.standard.libreInitialPatchInfo,
+                   initialPatchInfo.count >= 6,
+                   initialPatchInfo != patchInfo {
+                    candidatePatchInfos.append(initialPatchInfo)
+                }
+
+                for candidatePatchInfo in candidatePatchInfos {
+                    var decodedFram = encryptedFram
+                    guard sensorType.decryptIfPossibleAndNeeded(rxBuffer: &decodedFram, headerLength: 0, log: nil, patchInfo: candidatePatchInfo.toHexString(), uid: Array(sensorUID)),
+                          decodedFram.count >= 318
+                    else { continue }
+
+                    var crcBuffer = decodedFram
+                    let crcValid = sensorType.crcIsOk(rxBuffer: &crcBuffer, headerLength: 0, log: nil)
+                    xdrip.trace("LIBRE_DIAG FRAM candidate patch=%{public}@ crcValid=%{public}@ stateByte=%{public}@ ageMinutes=%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: crcValid ? .info : .error, candidatePatchInfo.toHexString(), crcValid.description, String(format: "0x%02X", decodedFram[4]), (Int(decodedFram[316]) + (Int(decodedFram[317]) << 8)).description)
+                    guard crcValid else { continue }
+
+                    let stateByte = decodedFram[4]
+                    let state = LibreSensorState(stateByte: stateByte)
+                    let age = Int(decodedFram[316]) + (Int(decodedFram[317]) << 8)
+                    return (state, age, stateByte, candidatePatchInfo)
+                }
+
+                return nil
+            }
+
+            guard let decodedStatus = decodedStateAndAge(fram) else {
+                xdrip.trace("LIBRE_DIAG refusing sensor command: unable to decode state/age", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .error)
+                session.invalidate(errorMessage: "Unable to verify the sensor state.")
+                return
+            }
+
+            xdrip.trace("LIBRE_DIAG CRC-validated NFC state=%{public}@ stateByte=%{public}@ ageMinutes=%{public}@ decodingPatch=%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, decodedStatus.state.description, String(format: "0x%02X", decodedStatus.stateByte), decodedStatus.age.description, decodedStatus.decodingPatchInfo.toHexString())
+
+            switch diagnosticMode {
+            case .activationOnly:
+                // DiaBLE classifies both C6 and 7F 0E 31 01 as non-Gen2
+                // European Libre 2 Plus sensors. They share the legacy Libre 2
+                // A1/1B activation path; 7F differs later by advertising the
+                // MAC address returned by A1/1E instead of ABBOTT + serial.
+                guard sensorType == .libre2C6 || sensorType == .libre27F else {
+                    xdrip.trace("LIBRE_DIAG refusing activation-only command for unsupported sensor type %{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .error, sensorType?.description ?? "unknown")
+                    session.invalidate(errorMessage: "This diagnostic activation supports only Libre 2 Plus C6 and 7F.")
+                    return
+                }
+
+                if decodedStatus.state == .notYetStarted {
+                    guard decodedStatus.age == 0 else {
+                        xdrip.trace("LIBRE_DIAG refusing activation: not-started sensor has nonzero age %{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .error, decodedStatus.age.description)
+                        session.invalidate(errorMessage: "The sensor state is inconsistent and was not changed.")
+                        return
+                    }
+
+                    // This is a new, explicitly authorized test of the current
+                    // upstream DiaBLE activation path. Persist both the lock and
+                    // one-shot consumption before A1 1B so CoreBluetooth cannot
+                    // race the NFC transaction and relaunching cannot repeat it.
+                    let activationAttemptKey = Self.diagnosticActivationAttemptKey(sensorUID: sensorUID)
+                    guard !UserDefaults.standard.bool(forKey: activationAttemptKey) else {
+                        xdrip.trace("LIBRE_DIAG refusing activation: the upstream DiaBLE v3 attempt for sensor %{public}@ was already issued", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .error, sensorUID.toHexString())
+                        session.invalidate(errorMessage: "This activation attempt was already used.")
+                        return
+                    }
+
+                    let provisionalAcceptedAt = Date()
+                    UserDefaults.standard.set(provisionalAcceptedAt.timeIntervalSince1970, forKey: Self.diagnosticActivationAcceptedAtKey(sensorUID: sensorUID))
+                    UserDefaults.standard.set(true, forKey: activationAttemptKey)
+
+                    let activationCommand = self.nfcCommand(.activate, unlockCode: self.unlockCode, patchInfo: patchInfo, sensorUID: sensorUID)
+                    xdrip.trace("LIBRE_DIAG upstream DiaBLE v3 activation command=0x%{public}@ parameters=%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, String(format: "%02X", activationCommand.code), activationCommand.parameters.toHexString())
+
+                    var activationAcknowledged = false
+                    var framToPersist = fram
+                    do {
+                        let activationResponse = try await customCommandAsync(tag: tag, code: Int(activationCommand.code), params: activationCommand.parameters)
+                        xdrip.trace("LIBRE_DIAG upstream DiaBLE v3 activation response bytes=%{public}@ data=%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, activationResponse.count.description, activationResponse.toHexString())
+
+                        guard activationResponse.count == 4,
+                              activationResponse.prefix(2) == patchInfo.prefix(2),
+                              activationResponse.suffix(2) == Data([0x10, 0x00])
+                        else {
+                            xdrip.trace("LIBRE_DIAG activation-only response failed validation", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .error)
+                            session.invalidate(errorMessage: "The sensor rejected activation.")
+                            return
+                        }
+                        activationAcknowledged = true
+
+                        // DiaBLE immediately rereads all 43 FRAM blocks after
+                        // A1 1B using only .highDataRate, three blocks per
+                        // request, five global retries, and a 250 ms retry
+                        // delay. Keep this deliberately separate from xDrip's
+                        // normal chunk reader so the comparison is exact.
+                        var postActivationFram = Data()
+                        var remainingBlocks = 43
+                        var requestedBlocks = 3
+                        var readRetry = 0
+                        let upstreamReadRetries = 5
+
+                        while remainingBlocks > 0 && readRetry <= upstreamReadRetries {
+                            let blockToRead = postActivationFram.count / 8
+
+                            do {
+                                let blockData = try await readMultipleBlocksAsync(
+                                    tag: tag,
+                                    requestFlags: .highDataRate,
+                                    blockRange: NSRange(location: blockToRead, length: requestedBlocks)
+                                )
+                                for block in blockData {
+                                    postActivationFram += block
+                                }
+                                remainingBlocks -= requestedBlocks
+                                if remainingBlocks != 0 && remainingBlocks < requestedBlocks {
+                                    requestedBlocks = remainingBlocks
+                                }
+                            } catch {
+                                xdrip.trace("LIBRE_DIAG upstream DiaBLE v3 post-activation FRAM read error block=%{public}@ retry=%{public}@/%{public}@ error=%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, blockToRead.description, readRetry.description, upstreamReadRetries.description, error.localizedDescription)
+                                readRetry += 1
+                                if readRetry <= upstreamReadRetries {
+                                    self.scanRepeatHapticFeedback()
+                                    try await Task.sleep(nanoseconds: 250_000_000)
+                                } else {
+                                    throw error
+                                }
+                            }
+                        }
+
+                        if postActivationFram.count == 43 * 8,
+                           let postActivationStatus = decodedStateAndAge(postActivationFram) {
+                            xdrip.trace("LIBRE_DIAG upstream DiaBLE v3 immediate state=%{public}@ stateByte=%{public}@ ageMinutes=%{public}@ framBytes=%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, postActivationStatus.state.description, String(format: "0x%02X", postActivationStatus.stateByte), postActivationStatus.age.description, postActivationFram.count.description)
+                            framToPersist = postActivationFram
+                        } else {
+                            xdrip.trace("LIBRE_DIAG upstream DiaBLE v3 immediate FRAM reread incompleteOrUndecodable bytes=%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .error, postActivationFram.count.description)
+                        }
+                    } catch {
+                        let nsError = error as NSError
+                        xdrip.trace("LIBRE_DIAG upstream DiaBLE v3 activation/post-read ended domain=%{public}@ code=%{public}@ error=%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .error, nsError.domain, nsError.code.description, error.localizedDescription)
+                        guard activationAcknowledged else {
+                            session.invalidate(errorMessage: "Sensor activation failed and was not retried.")
+                            return
+                        }
+                    }
+
+                    let acceptedAt = Date()
+                    UserDefaults.standard.set(acceptedAt.timeIntervalSince1970, forKey: Self.diagnosticActivationAcceptedAtKey(sensorUID: sensorUID))
+                    Self.scheduleDiagnosticWarmupNotification(sensorUID: sensorUID)
+                    UserDefaults.standard.removeObject(forKey: "LibreDebugActivationVerified")
+                    UserDefaults.standard.libreInitialPatchInfo = nil
+                    UserDefaults.standard.libreActiveSensorUnlockCount = 0
+                    self.libreNFCDelegate?.received(fram: framToPersist)
+
+                    xdrip.trace("LIBRE_DIAG upstream DiaBLE v3 transaction ended at %{public}@; entering hard 60-minute NFC/BLE lockout", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, acceptedAt.description)
+                    session.alertMessage = "DiaBLE activation test complete. Move the phone away and do not scan for 60 minutes."
+                    self.commandCompletionHapticFeedback()
+                    self.activationOnlySucceeded = true
+                    session.invalidate()
+                    return
+                }
+
+                // If a prior activation took effect before this deliberately
+                // isolated scan, record its approximate start and still stop.
+                if decodedStatus.state == .starting || decodedStatus.state == .ready {
+                    let acceptedAt = Date().addingTimeInterval(-TimeInterval(decodedStatus.age * 60))
+                    if Self.diagnosticActivationAcceptedAt(sensorUID: sensorUID) == nil {
+                        UserDefaults.standard.set(acceptedAt.timeIntervalSince1970, forKey: Self.diagnosticActivationAcceptedAtKey(sensorUID: sensorUID))
+                    }
+                    self.libreNFCDelegate?.received(fram: fram)
+                    xdrip.trace("LIBRE_DIAG activation-only scan found sensor already %{public}@ age=%{public}@; no command sent", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, decodedStatus.state.description, decodedStatus.age.description)
+                    session.alertMessage = "Sensor is already warming or active. No command was sent."
+                    self.activationOnlySucceeded = true
+                    session.invalidate()
+                    return
+                }
+
+                xdrip.trace("LIBRE_DIAG refusing activation-only command for sensor state %{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .error, decodedStatus.state.description)
+                session.invalidate(errorMessage: "The sensor is not in an activatable state.")
+                return
+
+            case .enableStreamingOnly:
+                guard let secondsRemaining = Self.diagnosticWarmupSecondsRemaining(sensorUID: sensorUID) else {
+                    xdrip.trace("LIBRE_DIAG refusing streaming: no successful activation-only timestamp exists for sensor %{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .error, sensorUID.toHexString())
+                    session.invalidate(errorMessage: "Activate this sensor with the diagnostic activation scan first.")
+                    return
+                }
+
+                guard secondsRemaining <= 0 else {
+                    let minutesRemaining = Int(ceil(secondsRemaining / 60))
+                    xdrip.trace("LIBRE_DIAG hard warm-up lockout refused streaming with %{public}@ seconds remaining", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, Int(secondsRemaining).description)
+                    session.invalidate(errorMessage: "Warm-up lock: wait another \(minutesRemaining) minute(s). No command was sent.")
+                    return
+                }
+
+                guard decodedStatus.state == .ready else {
+                    xdrip.trace("LIBRE_DIAG refusing streaming after lockout: CRC-validated sensor state is %{public}@ age=%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .error, decodedStatus.state.description, decodedStatus.age.description)
+                    session.invalidate(errorMessage: "The sensor is not ready. No streaming command was sent.")
+                    return
+                }
+
+                UserDefaults.standard.set(true, forKey: "LibreDebugActivationVerified")
+                session.alertMessage = "Sensor is ready. Enabling Bluetooth—keep holding."
+            }
+#endif
+
             self.libreNFCDelegate?.received(fram: fram)
 
             // Enable streaming
@@ -339,29 +705,51 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
             let info = "NFC: sending Libre 2 command to " + subCmd.description + " : code: 0x" + String(format: "%0X", cmd.code) + ", parameters: 0x" + cmd.parameters.toHexString() + "unlock code: " + self.unlockCode.description
             xdrip.trace("%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, info)
 
-            do {
-                let response = try await customCommandAsync(tag: tag, code: Int(cmd.code), params: cmd.parameters)
-                let respLog = "NFC: '" + subCmd.description + " command response " + response.count.description + " bytes : 0x" + response.toHexString() + ", error: nil"
-                xdrip.trace("%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, respLog)
+            var streamingRetry = 0
+            var streamingSucceeded = false
 
-                if subCmd == .enableStreaming && response.count == 6 {
+            while true {
+                do {
+                    let response = try await customCommandAsync(tag: tag, code: Int(cmd.code), params: cmd.parameters)
+                    let respLog = "NFC: '" + subCmd.description + " command response " + response.count.description + " bytes : 0x" + response.toHexString() + ", error: nil"
+                    xdrip.trace("%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, respLog)
+
+                    guard response.count == 6 else {
+                        xdrip.trace("LIBRE_DIAG enable-streaming rejected unexpectedResponseLength=%{public}@ response=%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .error, response.count.description, response.toHexString())
+                        break
+                    }
+
                     self.serialNumber = LibreSensorSerialNumber(withUID: sensorUID, with: LibreSensorType.type(patchInfo: patchInfo.toHexString()))?.serialNumber ?? "unknown"
                     self.macAddress = Data(response.reversed()).hexEncodedString().uppercased()
 
                     let ok = "NFC: successfully enabled BLE streaming on Libre 2 " + self.serialNumber + " unlock code: " + self.unlockCode.description + " MAC address: " + self.macAddress
                     xdrip.trace("%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, ok)
 
-                    session.alertMessage = TextsLibreNFC.scanComplete
+                    session.alertMessage = "Bluetooth streaming enabled. You may move the phone away."
                     self.nfcScanSuccessful = true
-                    self.libreNFCDelegate?.streamingEnabled(successful: true)
-                } else {
-                    self.libreNFCDelegate?.streamingEnabled(successful: false)
+                    streamingSucceeded = true
+                    self.commandCompletionHapticFeedback()
+                    break
+                } catch {
+                    let nsError = error as NSError
+                    let respLog = "NFC: '" + subCmd.description + " command error on attempt " + streamingRetry.description + "/" + retries.description + ": " + error.localizedDescription + " domain: " + nsError.domain + " code: " + nsError.code.description
+                    xdrip.trace("%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, respLog)
+
+                    guard streamingRetry < retries else { break }
+                    streamingRetry += 1
+                    session.alertMessage = TextsLibreNFC.holdTopOfIphoneNearSensor
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+
+                    do {
+                        try await session.connect(to: firstTag)
+                        xdrip.trace("NFC: reconnected to tag for enable-streaming attempt %{public}@/%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, streamingRetry.description, retries.description)
+                    } catch {
+                        xdrip.trace("NFC: reconnect before enable-streaming attempt %{public}@/%{public}@ failed: %{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, streamingRetry.description, retries.description, error.localizedDescription)
+                    }
                 }
-            } catch {
-                let respLog = "NFC: '" + subCmd.description + " command error: " + error.localizedDescription
-                xdrip.trace("%{public}@", log: self.log, category: ConstantsLog.categoryLibreNFC, type: .info, respLog)
-                self.libreNFCDelegate?.streamingEnabled(successful: false)
             }
+
+            self.libreNFCDelegate?.streamingEnabled(successful: streamingSucceeded)
 
             session.invalidate()
         }
@@ -650,8 +1038,21 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
     
     /// this just centralises the system sound that we will fire every time we scan the sensor in each loop.
     private func scanRepeatHapticFeedback() {
-        // play "peek" vibration
+        // Intermediate/retry haptics are intentionally silent in the debug
+        // handoff build: a vibration must mean the NFC command is complete.
+#if !DEBUG
         AudioServicesPlaySystemSound(1519)
+#endif
+    }
+
+    /// A recognizable completion signal, distinct from iOS's own NFC tag
+    /// detection vibration. Both pulses occur only after the sensor has
+    /// returned a validated activation or enable-streaming response.
+    private func commandCompletionHapticFeedback() {
+        AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+        }
     }
 }
 

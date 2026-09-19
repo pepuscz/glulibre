@@ -52,6 +52,9 @@ final class SettingsViewController: UIViewController {
         
         /// healthkit
         case healthkit
+
+        /// meal photo capture, OpenAI analysis and nutrition export
+        case mealAnalysis
         
         /// store bg values in healthkit
         case speak
@@ -101,6 +104,8 @@ final class SettingsViewController: UIViewController {
                 return SettingsViewDexcomShareUploadSettingsViewModel()
             case .healthkit:
                 return SettingsViewHealthKitSettingsViewModel()
+            case .mealAnalysis:
+                return SettingsViewMealAnalysisSettingsViewModel()
             case .speak:
                 return SettingsViewSpeakSettingsViewModel()
             case .M5stack:
@@ -359,5 +364,4 @@ extension SettingsViewController {
         
     }
 }
-
 

@@ -8,6 +8,12 @@ protocol LibreNFCDelegate: AnyObject {
     func received(fram: Data)
     
     func streamingEnabled(successful : Bool)
+
+#if DEBUG
+    /// A fresh sensor accepted activation. This is intentionally not a BLE
+    /// handoff; the caller must wait through the full warm-up first.
+    func activationCompleted()
+#endif
     
     /// used to pass back the result of the NFC scan 
     func nfcScanResult(successful : Bool)

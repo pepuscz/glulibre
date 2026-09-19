@@ -14,6 +14,14 @@ class Libre2BluetoothPeripheralViewModel {
         
         /// case smooth libre values
         case smoothLibreValues = 2
+
+#if DEBUG
+        /// Explicit, guarded one-shot activation for a newly applied sensor.
+        case activateNewSensor = 3
+
+        /// Explicit post-warm-up NFC handoff. Never runs automatically.
+        case completeBLEHandoff = 4
+#endif
         
     }
     
@@ -165,6 +173,22 @@ extension Libre2BluetoothPeripheralViewModel: BluetoothPeripheralViewModel {
                 // this is later used to make a cut-off in the read success calculations
                 UserDefaults.standard.smoothLibreValuesChangedAtTimeStamp = .now
             })
+
+#if DEBUG
+        case .activateNewSensor:
+            cell.textLabel?.text = "Activate new Libre 2+ sensor"
+            cell.detailTextLabel?.text = "One NFC scan, then 60-minute warm-up"
+            cell.textLabel?.textColor = .systemOrange
+            cell.accessoryType = .disclosureIndicator
+            cell.accessoryView = disclosureAccessoryView
+
+        case .completeBLEHandoff:
+            cell.textLabel?.text = "Complete BLE handoff"
+            cell.detailTextLabel?.text = "Streaming-only NFC"
+            cell.textLabel?.textColor = .systemBlue
+            cell.accessoryType = .disclosureIndicator
+            cell.accessoryView = disclosureAccessoryView
+#endif
         }
     }
     
@@ -201,6 +225,30 @@ extension Libre2BluetoothPeripheralViewModel: BluetoothPeripheralViewModel {
             
         case .smoothLibreValues:
             return .nothing
+
+#if DEBUG
+        case .activateNewSensor:
+            return .askConfirmation(
+                title: "Activate the newly applied sensor?",
+                message: "Use this only for a new Libre 2 Plus EU sensor that has never been activated. The app will verify a supported C6 or 7F sensor, NOT STARTED and age zero before sending activation exactly once. Keep the iPhone's top edge on the sensor through the initial NFC detection pulse. Move it away only after the later TWO strong vibrations and completion message. Do not scan again for 60 minutes.",
+                actionHandler: {
+                    guard let transmitter = bluetoothPeripheralManager.getBluetoothTransmitter(for: libre2, createANewOneIfNecesssary: true) as? CGMLibre2Transmitter else { return }
+                    transmitter.startDiagnosticNFCActivation()
+                },
+                cancelHandler: nil
+            )
+
+        case .completeBLEHandoff:
+            return .askConfirmation(
+                title: "Complete Libre BLE handoff?",
+                message: "This reads and CRC-checks the current sensor state. Only if it is READY will it send the streaming command A1 1E. Activation A1 1B is disabled. Keep the iPhone's top edge on the sensor until TWO strong vibrations, then move it away.",
+                actionHandler: {
+                    guard let transmitter = bluetoothPeripheralManager.getBluetoothTransmitter(for: libre2, createANewOneIfNecesssary: true) as? CGMLibre2Transmitter else { return }
+                    transmitter.startDiagnosticNFCStreamingRepair()
+                },
+                cancelHandler: nil
+            )
+#endif
             
         }
         

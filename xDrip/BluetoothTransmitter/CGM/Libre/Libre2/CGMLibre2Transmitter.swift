@@ -60,6 +60,24 @@ class CGMLibre2Transmitter: BluetoothTransmitter, CGMTransmitter {
     
     /// sensor type
     private var libreSensorType: LibreSensorType?
+
+#if DEBUG
+    private enum DiagnosticDefaultsKey {
+        static let sensorSerialNumber = "LibreDebugPeripheralSensorSerialNumber"
+        static let peripheralAddress = "LibreDebugPeripheralAddress"
+    }
+
+    static func diagnosticRestoredAddress(for sensorSerialNumber: String) -> String? {
+        let defaults = UserDefaults.standard
+        if defaults.string(forKey: DiagnosticDefaultsKey.sensorSerialNumber) == sensorSerialNumber,
+           let persistedAddress = defaults.string(forKey: DiagnosticDefaultsKey.peripheralAddress),
+           UUID(uuidString: persistedAddress) != nil {
+            return persistedAddress
+        }
+
+        return nil
+    }
+#endif
     
     // MARK: - Initialization
 
@@ -105,11 +123,67 @@ class CGMLibre2Transmitter: BluetoothTransmitter, CGMTransmitter {
     }
     
     // MARK: - overriden  BluetoothTransmitter functions
+
+    override func permitsBluetoothConnectionAttempt() -> Bool {
+#if DEBUG
+        guard let sensorUID = UserDefaults.standard.libreSensorUID,
+              LibreNFC.diagnosticActivationAttemptIssued(sensorUID: sensorUID) else {
+            return false
+        }
+
+        guard let remaining = LibreNFC.diagnosticWarmupSecondsRemaining(sensorUID: sensorUID) else {
+            return true
+        }
+
+        return remaining <= 0
+#else
+        return true
+#endif
+    }
     
     override func startScanning() -> BluetoothTransmitter.startScanningResult {
         // overriding startScanning, because it's the time to trigger NFC Scan
         // when user clicks the scan button, an NFC read is initiated which will enable the bluetooth streaming
         // meanwhile, the real scanning can start
+
+        guard permitsBluetoothConnectionAttempt() else {
+            stopScanning()
+#if DEBUG
+            if let sensorUID = UserDefaults.standard.libreSensorUID,
+               let remaining = LibreNFC.diagnosticWarmupSecondsRemaining(sensorUID: sensorUID) {
+                trace("LIBRE_DIAG blocked NFC and BLE during activation warm-up remainingSeconds=%{public}@", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info, Int(remaining).description)
+            }
+#endif
+            return .other(reason: "Libre sensor activation warm-up is still running")
+        }
+
+#if DEBUG
+        // Once the explicit activation warm-up has elapsed, diagnostic builds
+        // may observe BLE without first marking the NFC streaming handoff as
+        // verified. This path never creates an NFC session or sends a sensor
+        // command; it only scans/connects using CoreBluetooth.
+        if let sensorUID = UserDefaults.standard.libreSensorUID,
+           LibreNFC.diagnosticActivationAttemptIssued(sensorUID: sensorUID),
+           (LibreNFC.diagnosticWarmupSecondsRemaining(sensorUID: sensorUID) ?? 0) <= 0 {
+            trace("LIBRE_DIAG startScanning using passive BLE-only mode; NFC is disabled", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info)
+            return super.startScanning()
+        }
+
+        // The diagnostic build can resume BLE discovery after a successful NFC
+        // handoff without issuing another command to the sensor. This is useful
+        // when the debugger/app is restarted while investigating pairing.
+        if let sensorSerialNumber,
+           !sensorSerialNumber.isEmpty,
+           UserDefaults.standard.bool(forKey: "LibreDebugActivationVerified"),
+           let sensorUID = UserDefaults.standard.libreSensorUID,
+           sensorUID.count == 8,
+           let patchInfo = UserDefaults.standard.libreInitialPatchInfo ?? UserDefaults.standard.librePatchInfo,
+           !patchInfo.isEmpty {
+            trace("LIBRE_DIAG resuming BLE scan from cached NFC handoff sensor=%{public}@ uid=%{public}@ patch=%{public}@", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info, sensorSerialNumber, sensorUID.hexEncodedString(), patchInfo.hexEncodedString())
+            return super.startScanning()
+        }
+        trace("LIBRE_DIAG cached NFC data exists but activation is not verified; opening a state-check NFC session", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info)
+#endif
         
         // create libreNFC instance and start session
         if NFCTagReaderSession.readingAvailable {
@@ -118,7 +192,11 @@ class CGMLibre2Transmitter: BluetoothTransmitter, CGMTransmitter {
                 // NFC session creation must be on main thread
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
+#if DEBUG
+                    self.libreNFC = LibreNFC(libreNFCDelegate: self, diagnosticMode: .enableStreamingOnly)
+#else
                     self.libreNFC = LibreNFC(libreNFCDelegate: self)
+#endif
                     (self.libreNFC as! LibreNFC).startSession()
                 }
             }
@@ -133,9 +211,128 @@ class CGMLibre2Transmitter: BluetoothTransmitter, CGMTransmitter {
         // start the NFC scan (not BLE scanning)
         return .nfcScanNeeded
     }
+
+    override func discoveredPeripheralMatchesExpectedDevice(_ peripheral: CBPeripheral, advertisementData: [String: Any]) -> Bool {
+        if super.discoveredPeripheralMatchesExpectedDevice(peripheral, advertisementData: advertisementData) {
+            return true
+        }
+
+#if DEBUG
+        // Libre 2/2+ 7F sensors advertise manufacturer data as Abbott's
+        // two-byte prefix followed by the sensor UID. This remains available
+        // after an app restart, whereas CoreBluetooth's identifier can still
+        // refer to the previous sensor and the 7F device name is MAC-style
+        // rather than ABBOTT+serial. Match the UID captured by the successful
+        // NFC handoff so recovery cannot attach to a neighbouring sensor.
+        guard let sensorUID = UserDefaults.standard.libreSensorUID,
+              sensorUID.count == 8,
+              let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
+              manufacturerData.count == 8,
+              manufacturerData.dropFirst(2).elementsEqual(sensorUID.prefix(6)) else {
+            return false
+        }
+
+        trace("LIBRE_DIAG BLE advertisement matched cached NFC sensor UID %{public}@", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info, sensorUID.hexEncodedString())
+        return true
+#else
+        return false
+#endif
+    }
+
+#if DEBUG
+    /// Observe/connect to an already advertising Libre without touching NFC.
+    /// This is deliberately the only automatic post-warm-up recovery action.
+    func startDiagnosticBLEOnly() {
+        guard permitsBluetoothConnectionAttempt() else {
+            trace("LIBRE_DIAG passive BLE-only discovery refused by warm-up policy", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info)
+            return
+        }
+
+        // A restored CoreBluetooth object can remain indefinitely in
+        // `connecting`, which prevents startScanning() from issuing a real
+        // scan. Drop only that in-memory handle and constrain fresh discovery
+        // to this sensor's advertised name. Persisted NFC/sensor data remains.
+        if let sensorSerialNumber, !sensorSerialNumber.isEmpty {
+            updateExpectedDeviceName(name: "ABBOTT" + sensorSerialNumber)
+        }
+        disconnectAndForget()
+        trace("LIBRE_DIAG starting fresh passive BLE-only discovery after dropping stale restored handle; no NFC session or sensor command", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info)
+        _ = super.startScanning()
+    }
+
+    /// Opens the normal Libre NFC handoff specifically to restore BLE
+    /// streaming after a verified sensor stops advertising. LibreNFC reads and
+    /// validates the current FRAM state before sending anything: a starting or
+    /// ready sensor may receive enableStreaming, while a not-yet-started
+    /// sensor is reported and left unchanged.
+    func startDiagnosticNFCStreamingRepair() {
+        guard getConnectionStatus() != .connected else {
+            trace("LIBRE_DIAG NFC streaming repair skipped because BLE is already connected", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info)
+            return
+        }
+
+        guard NFCTagReaderSession.readingAvailable else {
+            DispatchQueue.main.async { [weak self] in
+                self?.bluetoothTransmitterDelegate?.error(message: TextsLibreNFC.deviceMustSupportNFC)
+            }
+            return
+        }
+
+        stopScanning()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.libreNFC == nil else { return }
+            trace("LIBRE_DIAG opening streaming-only NFC session after the 60-minute lockout", log: self.log, category: ConstantsLog.categoryCGMLibre2, type: .info)
+            self.libreNFC = LibreNFC(libreNFCDelegate: self, diagnosticMode: .enableStreamingOnly)
+            (self.libreNFC as? LibreNFC)?.startSession()
+        }
+    }
+
+    /// Opens exactly one upstream-style activation NFC operation. After A1 1B
+    /// it performs DiaBLE's immediate FRAM reread, but it cannot fall through
+    /// to A1 1E or BLE.
+    func startDiagnosticNFCActivation() {
+        guard NFCTagReaderSession.readingAvailable else {
+            DispatchQueue.main.async { [weak self] in
+                self?.bluetoothTransmitterDelegate?.error(message: TextsLibreNFC.deviceMustSupportNFC)
+            }
+            return
+        }
+
+        // Activation is always an explicit user action. Stop any observation
+        // of the previous sensor first; the NFC layer then CRC-checks the new
+        // sensor, requires a supported non-Gen2 Libre 2 Plus (C6 or 7F) in
+        // not-started/age-zero state, and persists its one-shot guard before
+        // issuing A1 1B. It cannot continue into A1 1E or BLE.
+        stopScanning()
+        disconnect()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.libreNFC == nil else { return }
+            trace("LIBRE_DIAG opening explicit one-shot fresh-sensor activation session", log: self.log, category: ConstantsLog.categoryCGMLibre2, type: .info)
+            self.libreNFC = LibreNFC(libreNFCDelegate: self, diagnosticMode: .activationOnly)
+            (self.libreNFC as? LibreNFC)?.startSession()
+        }
+    }
+#endif
     
     override func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         super.centralManager(central, didConnect: peripheral)
+
+#if DEBUG
+        if let sensorSerialNumber {
+            UserDefaults.standard.set(sensorSerialNumber, forKey: DiagnosticDefaultsKey.sensorSerialNumber)
+            UserDefaults.standard.set(peripheral.identifier.uuidString, forKey: DiagnosticDefaultsKey.peripheralAddress)
+            trace("LIBRE_DIAG persisted sensor-specific BLE identity sensor=%{public}@ address=%{public}@", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info, sensorSerialNumber, peripheral.identifier.uuidString)
+
+            // The recovery transmitter is adopted as a normal Libre device by
+            // BluetoothPeripheralManager during super.didConnect. Queue the
+            // serial update after that adoption so the Core Data row is fully
+            // usable on subsequent launches without the diagnostic fallback.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.cGMLibre2TransmitterDelegate?.received(serialNumber: sensorSerialNumber, from: self)
+            }
+        }
+#endif
         
         if let sensorSerialNumber = tempSensorSerialNumber {
             // we need to send the sensorSerialNumber here. Possibly this is a new transmitter being scanned for, in which case the call to cGMLibre2TransmitterDelegate?.received(sensorSerialNumber: ..) in NFCTagReaderSessionDelegate functions wouldn't have stored the status in coredata, because it' doesn't find the transmitter, so let's store it again, at each connect, if not nil
@@ -193,7 +390,7 @@ class CGMLibre2Transmitter: BluetoothTransmitter, CGMTransmitter {
         }
         
         // there should be already stored a value for librePatchInfo in the userdefaults at this moment, otherwise processing is not possible
-        guard let librePatchInfo = UserDefaults.standard.librePatchInfo else {
+        guard let librePatchInfo = UserDefaults.standard.libreInitialPatchInfo ?? UserDefaults.standard.librePatchInfo else {
             trace("in peripheral didUpdateNotificationStateFor but librePatchInfo is not known, no further processing", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info)
             
             return
@@ -413,6 +610,15 @@ extension CGMLibre2Transmitter: LibreNFCDelegate {
     func streamingEnabled(successful: Bool) {
         if successful {
             trace("received streaming enabled message from NFC with result successful, setting unlockCount to 0", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info)
+
+            // Preserve the patch info used by the successful enable-streaming
+            // exchange. DiaBLE keeps the same distinction because subsequent
+            // NFC reads may expose different current patch bytes, while BLE
+            // unlocks must continue using this original value.
+            if let patchInfo = UserDefaults.standard.librePatchInfo {
+                UserDefaults.standard.libreInitialPatchInfo = patchInfo
+                trace("LIBRE_DIAG preserved BLE initial patchInfo=%{public}@", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info, patchInfo.toHexString())
+            }
             
             UserDefaults.standard.libreActiveSensorUnlockCount = 0
 
@@ -420,6 +626,15 @@ extension CGMLibre2Transmitter: LibreNFCDelegate {
             trace("received streaming enabled message from NFC with result unsuccessful", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info)
         }
     }
+
+#if DEBUG
+    func activationCompleted() {
+        trace("LIBRE_DIAG activation-only delegate completed; releasing NFC object and leaving BLE stopped for 60 minutes", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info)
+        stopScanning()
+        disconnect()
+        libreNFC = nil
+    }
+#endif
     
     func nfcScanResult(successful: Bool) {
         if successful {
@@ -441,13 +656,22 @@ extension CGMLibre2Transmitter: LibreNFCDelegate {
     }
     
     func startBLEScanning() {
+        trace("LIBRE_DIAG NFC handoff complete; starting BLE scan", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info)
         _ = super.startScanning()
     }
     
     func nfcScanExpectedDevice(serialNumber: String, macAddress: String) {
+        // A replacement sensor has a different CoreBluetooth identifier. The
+        // existing Libre transmitter instance may still contain the previous
+        // sensor's address, which otherwise takes precedence over expectedName
+        // and causes the correct advertisement to be ignored indefinitely.
+        disconnectAndForget()
+
         if libreSensorType == .libre27F {
+            trace("LIBRE_DIAG 7F sensor expects BLE MAC-style name %{public}@", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info, macAddress)
             updateExpectedDeviceName(name: macAddress)
         } else {
+            trace("LIBRE_DIAG sensor type %{public}@ expects ABBOTT serial-style name ABBOTT%{public}@", log: log, category: ConstantsLog.categoryCGMLibre2, type: .info, libreSensorType?.description ?? "nil", serialNumber)
             updateExpectedDeviceName(name: "ABBOTT" + serialNumber)
         }
     }

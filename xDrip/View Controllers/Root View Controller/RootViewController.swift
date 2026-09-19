@@ -536,6 +536,12 @@ final class RootViewController: UIViewController, ObservableObject {
     
     /// manages bluetoothPeripherals that this app knows
     private var bluetoothPeripheralManager: BluetoothPeripheralManager?
+
+#if DEBUG
+    /// Keeps the source-level Libre diagnostic connection alive independently
+    /// of the Bluetooth setup screen.
+    private var libreDiagnosticTransmitter: CGMLibre2Transmitter?
+#endif
     
     /// - manage glucose chart
     /// - will be nillified each time the app goes to the background, to avoid unnecessary ram usage (which seems to cause app getting killed)
@@ -1235,6 +1241,88 @@ final class RootViewController: UIViewController, ObservableObject {
             self.dexcomShareFollowManager?.download()
             self.medtrumEasyViewFollowManager?.download()
         }, cgmTransmitterInfoChanged: cgmTransmitterInfoChanged)
+
+#if DEBUG
+        // If an NFC handoff was already captured, immediately resume BLE
+        // discovery at launch. This deliberately bypasses the setup UI and
+        // never sends another NFC command to the sensor.
+        if let bluetoothPeripheralManager,
+           let sensorUID = UserDefaults.standard.libreSensorUID,
+           let patchInfo = UserDefaults.standard.librePatchInfo,
+           let sensorSerialNumber = LibreSensorSerialNumber(withUID: sensorUID, with: LibreSensorType.type(patchInfo: patchInfo.toHexString()))?.serialNumber {
+            let expectedName = "ABBOTT" + sensorSerialNumber
+            let configuredIndex = bluetoothPeripheralManager.bluetoothPeripherals.firstIndex { bluetoothPeripheral in
+                guard bluetoothPeripheral is Libre2 else { return false }
+                return bluetoothPeripheral.blePeripheral.sensorSerialNumber == sensorSerialNumber || bluetoothPeripheral.blePeripheral.name == expectedName
+            }
+
+            // Drive one explicit stage per launch. Before activation there is
+            // exactly one activation-only prompt. During the following hour
+            // there is no NFC prompt and no BLE handoff. Once the full hour has
+            // elapsed, the debug build observes BLE only. NFC streaming setup
+            // must be started explicitly; never spend another sensor lockout
+            // window merely because the app was launched.
+            let requestedStreamingHandoff = ProcessInfo.processInfo.arguments.contains("--libre-streaming-handoff")
+            let scheduleTwoStageNFC: (CGMLibre2Transmitter) -> Void = { [weak self] transmitter in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self, weak transmitter] in
+                    guard let self, let transmitter else { return }
+
+                    if !LibreNFC.diagnosticActivationAttemptIssued(sensorUID: sensorUID) {
+                        trace("LIBRE_DIAG automatic activation is disabled; starting passive BLE-only discovery", log: self.log, category: ConstantsLog.categoryRootView, type: .info)
+                        transmitter.startDiagnosticBLEOnly()
+                        return
+                    }
+
+                    guard transmitter.getConnectionStatus() != .connected else { return }
+
+                    if let acceptedAt = LibreNFC.diagnosticActivationAcceptedAt(sensorUID: sensorUID),
+                       let remaining = LibreNFC.diagnosticWarmupSecondsRemaining(sensorUID: sensorUID) {
+                        if remaining > 0 {
+                            LibreNFC.scheduleDiagnosticWarmupNotification(sensorUID: sensorUID)
+                            trace("LIBRE_DIAG two-stage warm-up lock active acceptedAt=%{public}@ remainingSeconds=%{public}@; no NFC or BLE command will run", log: self.log, category: ConstantsLog.categoryRootView, type: .info, acceptedAt.description, Int(remaining).description)
+                            return
+                        }
+
+                        if requestedStreamingHandoff {
+                            trace("LIBRE_DIAG explicit one-shot streaming handoff requested; opening state-check NFC session with activation disabled", log: self.log, category: ConstantsLog.categoryRootView, type: .info)
+                            transmitter.startDiagnosticNFCStreamingRepair()
+                        } else {
+                            trace("LIBRE_DIAG full 60-minute lockout elapsed; starting passive BLE-only discovery (automatic NFC disabled)", log: self.log, category: ConstantsLog.categoryRootView, type: .info)
+                            transmitter.startDiagnosticBLEOnly()
+                        }
+                    } else {
+                        trace("LIBRE_DIAG no activation timestamp; automatic activation is disabled and no NFC session will open", log: self.log, category: ConstantsLog.categoryRootView, type: .info)
+                    }
+                }
+            }
+
+            if let configuredIndex {
+                trace("LIBRE_DIAG normal persisted Libre connection is configured for sensor=%{public}@; diagnostic recovery is not needed", log: log, category: ConstantsLog.categoryRootView, type: .info, sensorSerialNumber)
+
+                if bluetoothPeripheralManager.bluetoothTransmitters.indices.contains(configuredIndex),
+                   let transmitter = bluetoothPeripheralManager.bluetoothTransmitters[configuredIndex] as? CGMLibre2Transmitter {
+                    scheduleTwoStageNFC(transmitter)
+                }
+            } else {
+                let restoredAddress = CGMLibre2Transmitter.diagnosticRestoredAddress(for: sensorSerialNumber)
+                trace("LIBRE_DIAG recovery configured sensor=%{public}@ uid=%{public}@ patch=%{public}@ restoredAddress=%{public}@", log: log, category: ConstantsLog.categoryRootView, type: .info, sensorSerialNumber, sensorUID.hexEncodedString(), patchInfo.hexEncodedString(), restoredAddress ?? "nil")
+
+                let transmitter = CGMLibre2Transmitter(address: restoredAddress, name: expectedName, bluetoothTransmitterDelegate: bluetoothPeripheralManager, cGMLibre2TransmitterDelegate: bluetoothPeripheralManager, sensorSerialNumber: sensorSerialNumber, cGMTransmitterDelegate: self, nonFixedSlopeEnabled: nil, webOOPEnabled: nil)
+
+                // Let the manager adopt this recovered connection as a normal
+                // Libre device. Once connected it will be stored in Core Data,
+                // so future launches use the regular production restore path.
+                bluetoothPeripheralManager.tempBlueToothTransmitterWhileScanningForNewBluetoothPeripheral = transmitter
+                bluetoothPeripheralManager.transmitterTypeBeingScannedFor = .Libre2Type
+                libreDiagnosticTransmitter = transmitter
+                transmitter.connect()
+
+                scheduleTwoStageNFC(transmitter)
+            }
+        } else {
+            trace("LIBRE_DIAG auto-resume unavailable: cached NFC handoff is incomplete", log: log, category: ConstantsLog.categoryRootView, type: .info)
+        }
+#endif
         
         // to initialize UserDefaults.standard.transmitterTypeAsString
         cgmTransmitterInfoChanged()
@@ -3728,6 +3816,8 @@ extension RootViewController: UNUserNotificationCenterDelegate {
             // so actually the app was in the foreground, at the  moment the Transmitter Class called the cgmTransmitterNeedsPairing function, there's no need to show the notification, we can immediately call back the cgmTransmitter initiatePairing function
             completionHandler([])
             bluetoothPeripheralManager?.initiatePairing()
+        } else if notification.request.identifier.hasPrefix(LibreNFC.diagnosticWarmupNotificationIdentifierPrefix) {
+            completionHandler([.banner, .list, .sound])
             // this will verify if it concerns an alert notification, if not pickerviewData will be nil
         } else if let pickerViewData = alertManager?.userNotificationCenter(center, willPresent: notification, withCompletionHandler: completionHandler) {
             PickerViewControllerModal.displayPickerViewController(pickerViewData: pickerViewData, parentController: self)

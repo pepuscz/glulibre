@@ -23,6 +23,9 @@ class TreatmentsViewController: UIViewController {
     
     /// keep track of whether the observers were already added/registered (to make sure before we try to remove them)
     private var didAddObservers: Bool = false
+
+    /// retained while the system camera is presented
+    private var mealCaptureCoordinator: MealCaptureCoordinator?
 	
     // Outlets
     @IBOutlet weak var titleNavigation: UINavigationItem!
@@ -79,6 +82,34 @@ class TreatmentsViewController: UIViewController {
     }
     
     // MARK: - View Life Cycle
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        let mealsButton = UIBarButtonItem(
+            image: UIImage(systemName: "fork.knife"),
+            style: .plain,
+            target: self,
+            action: #selector(openMeals)
+        )
+        mealsButton.accessibilityLabel = "Meals"
+        mealsButton.tintColor = .systemYellow
+        titleNavigation.leftBarButtonItem = mealsButton
+
+        let cameraButton = UIBarButtonItem(
+            image: UIImage(systemName: "camera.fill"),
+            style: .plain,
+            target: self,
+            action: #selector(captureMeal)
+        )
+        cameraButton.accessibilityLabel = "Photograph meal"
+        cameraButton.tintColor = .systemYellow
+        if let existingAddButton = titleNavigation.rightBarButtonItem {
+            titleNavigation.rightBarButtonItems = [existingAddButton, cameraButton]
+        } else {
+            titleNavigation.rightBarButtonItem = cameraButton
+        }
+    }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
@@ -199,6 +230,24 @@ class TreatmentsViewController: UIViewController {
         treatmentCollection = TreatmentCollection(treatments: treatmentsArray)
         
         tableView.reloadData()
+    }
+
+    @objc private func openMeals() {
+        navigationController?.pushViewController(MealListViewController(), animated: true)
+    }
+
+    @objc private func captureMeal() {
+        let coordinator = MealCaptureCoordinator()
+        mealCaptureCoordinator = coordinator
+        coordinator.capture(from: self) { [weak self] image in
+            guard let self = self else { return }
+            do {
+                let record = try MealStore.shared.create(image: image)
+                self.navigationController?.pushViewController(MealEditorViewController(recordID: record.id), animated: true)
+            } catch {
+                self.showAlert(title: "Couldn’t Save Photo", message: error.localizedDescription)
+            }
+        }
     }
     
     // MARK: - overriden functions

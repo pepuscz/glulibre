@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C0D3B1012026082400000001 /* MealModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3A1012026082400000001 /* MealModels.swift */; };
+		C0D3B1022026082400000002 /* MealAIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3A1022026082400000002 /* MealAIClient.swift */; };
+		C0D3B1032026082400000003 /* MealHealthKitWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3A1032026082400000003 /* MealHealthKitWriter.swift */; };
+		C0D3B1042026082400000004 /* MealViewControllers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3A1042026082400000004 /* MealViewControllers.swift */; };
+		C0D3B1052026082400000005 /* SettingsViewMealAnalysisSettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3A1052026082400000005 /* SettingsViewMealAnalysisSettingsViewModel.swift */; };
 		47037B8E2C072346000BD6BD /* ConstantsAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F88EC279260120C000DF0EAF /* ConstantsAlerts.swift */; };
 		47037B8F2C072973000BD6BD /* ConstantsAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F88EC279260120C000DF0EAF /* ConstantsAlerts.swift */; };
 		47037B902C072974000BD6BD /* ConstantsAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F88EC279260120C000DF0EAF /* ConstantsAlerts.swift */; };
@@ -793,6 +798,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C0D3A1012026082400000001 /* MealModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealModels.swift; sourceTree = "<group>"; };
+		C0D3A1022026082400000002 /* MealAIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealAIClient.swift; sourceTree = "<group>"; };
+		C0D3A1032026082400000003 /* MealHealthKitWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealHealthKitWriter.swift; sourceTree = "<group>"; };
+		C0D3A1042026082400000004 /* MealViewControllers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealViewControllers.swift; sourceTree = "<group>"; };
+		C0D3A1052026082400000005 /* SettingsViewMealAnalysisSettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewMealAnalysisSettingsViewModel.swift; sourceTree = "<group>"; };
 		198D44C4260A3A3300A2B4A2 /* sv */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = sv; path = sv.lproj/Alerts.strings; sourceTree = "<group>"; };
 		198D44C5260A3A3300A2B4A2 /* sv */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = sv; path = sv.lproj/AlertTypesSettingsView.strings; sourceTree = "<group>"; };
 		198D44C6260A3A3300A2B4A2 /* sv */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = sv; path = sv.lproj/BluetoothPeripheralsView.strings; sourceTree = "<group>"; };
@@ -1841,6 +1851,18 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		C0D3A1002026082400000000 /* Meals */ = {
+			isa = PBXGroup;
+			children = (
+				C0D3A1012026082400000001 /* MealModels.swift */,
+				C0D3A1022026082400000002 /* MealAIClient.swift */,
+				C0D3A1032026082400000003 /* MealHealthKitWriter.swift */,
+				C0D3A1042026082400000004 /* MealViewControllers.swift */,
+				C0D3A1052026082400000005 /* SettingsViewMealAnalysisSettingsViewModel.swift */,
+			);
+			path = Meals;
+			sourceTree = "<group>";
+		};
 		4716A4F22B406C3D00419052 /* xDrip Widget */ = {
 			isa = PBXGroup;
 			children = (
@@ -2652,6 +2674,7 @@
 				F8AC42D021B342910078C348 /* Core Data */,
 				F8025C0B21D9513400ECF0C0 /* Extensions */,
 				F85DC2F621D25E3A00B9F74A /* Managers */,
+				C0D3A1002026082400000000 /* Meals */,
 				F8025E5A21F7AFA100ECF0C0 /* Resources */,
 				F85DC2F921D2CCC000B9F74A /* Storyboards */,
 				F8025E5B21F7AFC600ECF0C0 /* Supporting Files */,
@@ -4092,6 +4115,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C0D3B1012026082400000001 /* MealModels.swift in Sources */,
+				C0D3B1022026082400000002 /* MealAIClient.swift in Sources */,
+				C0D3B1032026082400000003 /* MealHealthKitWriter.swift in Sources */,
+				C0D3B1042026082400000004 /* MealViewControllers.swift in Sources */,
+				C0D3B1052026082400000005 /* SettingsViewMealAnalysisSettingsViewModel.swift in Sources */,
 				F8BDD450221CAA64006EAB84 /* TextsCommon.swift in Sources */,
 				F8EE3EA72B6833FA00B27B96 /* Libre3HeartBeatBluetoothPeripheralViewModel.swift in Sources */,
 				47B136DD2BCA9151001E7ED3 /* ConstantsContactImage.swift in Sources */,
