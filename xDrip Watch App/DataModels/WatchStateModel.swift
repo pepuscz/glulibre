@@ -110,7 +110,10 @@ final class WatchStateModel: NSObject, ObservableObject {
             slopeOrdinal = 4
             let collecting = arguments.contains("--watch-collecting")
             let limited = arguments.contains("--watch-limited")
-            lastMeal = WatchMealSnapshot(title: "Avocado toast", eatenAt: now.addingTimeInterval(collecting ? -3600 : -9000).timeIntervalSince1970,
+            let title = arguments.contains("--watch-long-meal")
+                ? "Avocado toast with roasted tomatoes, poached eggs, mushrooms and a side of plain yogurt"
+                : "Avocado toast"
+            lastMeal = WatchMealSnapshot(title: title, eatenAt: now.addingTimeInterval(collecting ? -3600 : -9000).timeIntervalSince1970,
                 state: collecting ? "collecting" : limited ? "limited" : "ready", riseMgDl: collecting || limited ? nil : 35,
                 detail: limited ? "Another logged meal overlaps this window." : "Observed after this meal")
         }

@@ -22,6 +22,7 @@ Numbered documents are engineering checkpoints, not a cumulative promise that ev
 - [Redesign, 4237](REDESIGN_4237.md)
 - [Watch companion, 4238](WATCH_COMPANION_4238.md)
 - [Watch face and settings, 4246](WATCH_GLANCE_4246.md)
+- [Watch scrolling, 4247](WATCH_SCROLLING_4247.md)
 - [Chart-first Today, 4242](TODAY_CHART_FIRST_4242.md)
 - [Editable meal model, 4241](MEAL_MODEL_SETTINGS_4241.md)
 

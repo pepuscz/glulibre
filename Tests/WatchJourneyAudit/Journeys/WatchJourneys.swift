@@ -1,13 +1,20 @@
 import XCTest
 
 final class WatchJourneys: XCTestCase {
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        #if !targetEnvironment(simulator)
+        throw XCTSkip("Synthetic Watch journeys must never run on a physical device")
+        #endif
+    }
+
     private func capture(_ name: String, app: XCUIApplication) {
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = name; screenshot.lifetime = .keepAlways; add(screenshot)
         let tree = XCTAttachment(string: app.debugDescription)
         tree.name = name + "-tree"; tree.lifetime = .keepAlways; add(tree)
     }
-    func testNowMealAndConnection() {
+    func testNowAndMealWithoutConnectionPage() {
         let app = XCUIApplication(bundleIdentifier: "com.652PWHFDA9.libredebug.watchkitapp")
         app.launchArguments = ["--watch-demo"]
         app.launch()
@@ -19,13 +26,47 @@ final class WatchJourneys: XCTestCase {
         }
         capture("After-swiping-to-food", app: app)
         XCTAssertTrue(app.staticTexts["Avocado toast"].isHittable)
+        for _ in 0..<3 { app.swipeUp() }
+        XCTAssertTrue(app.staticTexts["watch.meal.date"].isHittable)
+        XCTAssertFalse(app.buttons["watch.refresh"].exists)
+        XCTAssertFalse(app.staticTexts["Connection"].exists)
+        capture("Last-page-is-meal", app: app)
         for _ in 0..<4 {
-            if app.buttons["watch.refresh"].isHittable { break }
-            app.swipeUp()
+            if app.staticTexts["watch.glucose"].isHittable { break }
+            app.swipeDown()
         }
-        XCTAssertTrue(app.buttons["watch.refresh"].waitForExistence(timeout: 5))
-        capture("Connection", app: app)
-        app.buttons["watch.refresh"].tap()
+        XCTAssertTrue(app.staticTexts["watch.glucose"].isHittable)
+    }
+
+    func testDigitalCrownScrollsMealAndReturnsToGlucose() {
+        let app = XCUIApplication(bundleIdentifier: "com.652PWHFDA9.libredebug.watchkitapp")
+        for (name, flags) in [("Standard", [String]()), ("Large-long-meal", ["--watch-large", "--watch-long-meal"])] {
+            app.launchArguments = ["--watch-demo"] + flags
+            app.launch()
+            let reading = app.staticTexts["watch.glucose"]
+            capture("Crown-start-" + name, app: app)
+            XCTAssertTrue(reading.waitForExistence(timeout: 10))
+            XCTAssertTrue(reading.isHittable)
+            let mealEnd = app.staticTexts["watch.meal.date"]
+            // Native Crown events, no taps/swipes/focus workaround before scrolling.
+            for _ in 0..<12 {
+                if mealEnd.exists && mealEnd.isHittable { break }
+                XCUIDevice.shared.rotateDigitalCrown(delta: 0.3, velocity: .slow)
+            }
+            XCTAssertTrue(mealEnd.isHittable, "Crown must reach the end of the meal, including long content")
+            capture("Crown-meal-" + name, app: app)
+            XCUIDevice.shared.rotateDigitalCrown(delta: 0.5, velocity: .slow)
+            XCTAssertTrue(mealEnd.isHittable, "Further scrolling must stay at the last content page")
+            XCTAssertFalse(app.buttons["watch.refresh"].exists)
+            XCTAssertFalse(app.staticTexts["Connection"].exists)
+            for _ in 0..<12 {
+                if reading.exists && reading.isHittable { break }
+                XCUIDevice.shared.rotateDigitalCrown(delta: -0.3, velocity: .slow)
+            }
+            XCTAssertTrue(reading.isHittable, "Reversing the Crown must return to glucose without a touch gesture")
+            capture("Crown-glucose-" + name, app: app)
+            app.terminate()
+        }
     }
 
     func testChartIsReadableWithoutScrolling() {
@@ -61,7 +102,7 @@ final class WatchJourneys: XCTestCase {
             app.launch()
             XCTAssertTrue(app.staticTexts[label].waitForExistence(timeout: 5))
             if name == "Empty" {
-                XCTAssertTrue(app.staticTexts["Open GluLibre on your iPhone. Your sensor stays connected there."].exists)
+                XCTAssertTrue(app.staticTexts["Open GluLibre on iPhone."].exists)
             }
             capture(name, app: app)
             if name == "Stale" || name == "Empty" { XCTAssertEqual(app.staticTexts["watch.glucose"].label, "—") }
@@ -71,7 +112,7 @@ final class WatchJourneys: XCTestCase {
 
     func testLargeTextAndPrivacy() {
         let app = XCUIApplication(bundleIdentifier: "com.652PWHFDA9.libredebug.watchkitapp")
-        for page in ["", "--watch-meal", "--watch-connection"] {
+        for page in ["", "--watch-meal"] {
             app.launchArguments = ["--watch-demo", "--watch-large", page]
             app.launch()
             XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
@@ -82,14 +123,6 @@ final class WatchJourneys: XCTestCase {
                 XCTAssertGreaterThanOrEqual(reading.frame.height, 38)
             }
             capture("Large-" + page, app: app)
-            if page == "--watch-connection" {
-                for _ in 0..<4 {
-                    if app.buttons["watch.refresh"].isHittable { break }
-                    app.swipeUp()
-                }
-                XCTAssertTrue(app.buttons["watch.refresh"].isHittable)
-                app.buttons["watch.refresh"].tap()
-            }
             app.terminate()
         }
         app.launchArguments = ["--watch-demo", "--watch-dimmed"]
