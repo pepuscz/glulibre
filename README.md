@@ -7,12 +7,12 @@ Photograph a meal, add an optional note, and see the glucose response.
 [Build & install](docs/DEVELOPMENT.md) · [Privacy](docs/PRIVACY.md) · [Credits](NOTICE.md)
 
 <p>
-  <img src="docs/media/today.png" width="265" alt="Today: current glucose and the interactive chart">
+  <img src="docs/media/real-meal-timeline.png" width="265" alt="Real iPhone meal photos and glucose timeline, shared with permission">
   <img src="docs/media/food-comparison.png" width="265" alt="Compare repeated whole-meal responses">
   <img src="docs/media/watch.png" width="180" alt="Apple Watch app: glucose reading, trend arrow and recent chart">
 </p>
 
-*Simulator screenshots with synthetic data.*
+*Left: real meals and glucose, shared with permission. Other screenshots use sample data.*
 
 ## Capture. Compare. Learn.
 
