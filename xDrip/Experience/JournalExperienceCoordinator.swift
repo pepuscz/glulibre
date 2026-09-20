@@ -133,12 +133,12 @@ final class JournalExperienceCoordinator {
       }
       if args.contains("--journal-alerts") { showNotifications() }
       if args.contains("--journal-alarm-response") {
-        showAlarmResponse(
-          PickerViewData(
-            withMainTitle: "Sample glucose alert", withSubTitle: "Snooze for",
-            withData: ["15 minutes", "30 minutes", "1 hour"], selectedRow: 0, withPriority: .high,
-            actionButtonText: "Snooze", cancelButtonText: "Close", onActionClick: { _ in },
-            onCancelClick: {}, didSelectRowHandler: nil))
+        showSettings()
+        root?.auditAlarmInteractions(openToday: true)
+      }
+      if args.contains("--journal-alarm-foreground") {
+        capture()
+        root?.auditAlarmInteractions(openToday: false)
       }
       if args.contains("--journal-capture") { capture() }
       if args.contains("--journal-quick-preview"),
@@ -225,11 +225,6 @@ final class JournalExperienceCoordinator {
 
   func showSensorSetup() {
     presentSheet(JournalSensorSetupView(model: .shared, management: management))
-  }
-
-  func showAlarmResponse(_ data: PickerViewData) {
-    presenter?.present(
-      UIHostingController(rootView: JournalAlarmResponse(data: data)), animated: true)
   }
 
   private func presentSheet<Content: View>(_ content: Content) {

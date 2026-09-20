@@ -420,18 +420,28 @@ final class JourneyAudit: XCTestCase {
         app.swipeUp(); capture("105-accessibility-comparison-bottom")
     }
 
-    func testNativeAlarmResponse() {
+    func testAlarmTapOpensTodayWithoutSnoozePicker() {
         app.terminate()
         app.launchArguments = ["--journal-ui-testing", "--journal-demo", "--journal-alarm-response"]
         app.launch()
-        XCTAssertTrue(app.navigationBars["Sample glucose alert"].waitForExistence(timeout: 20))
-        capture("110-native-alarm-response")
-        XCTAssertTrue(tap("30 minutes"))
-        XCTAssertTrue(tap("Snooze"))
+        XCTAssertTrue(app.otherElements["journal.chart.plot"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.tabBars.buttons["Today"].isSelected)
+        XCTAssertFalse(app.staticTexts["Select Snooze Time"].exists)
+        XCTAssertFalse(app.navigationBars["Low Alarm"].exists)
         XCTAssertTrue(app.tabBars.buttons["Today"].isHittable)
-        app.terminate(); app.launch()
-        XCTAssertTrue(app.navigationBars["Sample glucose alert"].waitForExistence(timeout: 20))
-        XCTAssertTrue(tap("Close"))
+        capture("110-alarm-opens-chart")
+    }
+
+    func testForegroundAlarmDoesNotInterruptMealCapture() {
+        app.terminate()
+        app.launchArguments = ["--journal-ui-testing", "--journal-demo", "--journal-alarm-foreground"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Close camera"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["Close camera"].isHittable)
+        XCTAssertFalse(app.staticTexts["Select Snooze Time"].exists)
+        XCTAssertFalse(app.navigationBars["Low Alarm"].exists)
+        capture("111-alarm-keeps-camera-usable")
+        app.buttons["Close camera"].tap()
         XCTAssertTrue(app.tabBars.buttons["Today"].isHittable)
     }
 

@@ -182,24 +182,22 @@ public class AlertManager: NSObject {
         return immediateNotificationCreated
     }
     
-    /// Function to be called that receives the notification actions. Will handle the response. - called when user clicks a notification
-    ///
-    /// this function looks very similar to the function with the same name defined in  UNUserNotificationCenterDelegate, difference is that it returns an optional instance of PickerViewData. This will have the snooze data, ie title, actionHandler, cancelHandler, list of values, etc.  Goal is not to have UI related stuff in AlertManager class. it's the caller that needs to decide how to present the data
-    /// - returns:
-    ///     - PickerViewData : contains data that user needs to pick from, nil means nothing to pick from
-    public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) -> PickerViewData? {
-        // declare returnValue
-        var returnValue: PickerViewData?
+    /// Handles the existing sound/snooze actions. Only a normal tap opens Today;
+    /// opening an alert never asks for a duration or changes its snooze state.
+    /// The response is retained for rescheduling a missed-reading notification.
+    public func handleNotificationResponse(identifier: String, actionIdentifier: String,
+                                           response: UNNotificationResponse?) -> Bool {
+        var shouldOpenToday = false
         
         // loop through alertKinds to find matching notificationIdentifier
         loop: for alertKind in AlertKind.allCases {
-            if response.notification.request.identifier == alertKind.notificationIdentifier() {
+            if identifier == alertKind.notificationIdentifier() {
                 // user clicked an alert notification, time to stop playing if play
                 if let soundPlayer = soundPlayer {
                     soundPlayer.stopPlaying()
                 }
                 
-                switch response.actionIdentifier {
+                switch actionIdentifier {
                 case snoozeActionIdentifier:
 
                     // get the appicable alertEntry so we can find the alertType and default snooze value
@@ -216,8 +214,7 @@ public class AlertManager: NSObject {
                     
                     trace("in userNotificationCenter, received actionIdentifier : UNNotificationDefaultActionIdentifier (user clicked the notification which opens the app, but not the snooze action in this notification)", log: log, category: ConstantsLog.categoryAlertManager, type: .info)
 
-                    // create pickerViewData for the alertKind for which alert went off, and return it to the caller who in turn needs to allow the user to select a snoozeperiod
-                    returnValue = createPickerViewData(forAlertKind: alertKind, content: response.notification.request.content, actionHandler: nil, cancelHandler: nil)
+                    shouldOpenToday = true
 
                 case UNNotificationDismissActionIdentifier:
                     trace("in userNotificationCenter, received actionIdentifier : UNNotificationDismissActionIdentifier", log: log, category: ConstantsLog.categoryAlertManager, type: .info)
@@ -233,14 +230,14 @@ public class AlertManager: NSObject {
 
                 default:
                     
-                    trace("in userNotificationCenter, received actionIdentifier %{public}@", log: log, category: ConstantsLog.categoryAlertManager, type: .info, response.actionIdentifier)
+                    trace("in userNotificationCenter, received actionIdentifier %{public}@", log: log, category: ConstantsLog.categoryAlertManager, type: .info, actionIdentifier)
                 }
                 
                 break loop
             }
         }
         
-        return returnValue
+        return shouldOpenToday
     }
     
     /// get the snoozeParameter for the alertKind
@@ -276,28 +273,13 @@ public class AlertManager: NSObject {
         return snoozeStatus
     }
 
-    /// Function to be called that receives the notification actions. Will handle the response. completionHandler will not necessarily be called. Only if the identifier (response.notification.request.identifier) is one of the alert notification identifers, then it will handle the response and also call completionhandler.
-    /// called when notification created while app is in foreground
-    ///
-    /// this function looks very similar to the UNUserNotificationCenterDelegate function, difference is that it returns an optional instance of PickerViewData. This will have the snooze data, ie title, actionHandler, cancelHandler, list of values, etc.  Goal is not to have UI related stuff in AlertManager class. it's the caller that needs to decide how to present the data
-    /// - returns:
-    ///     - PickerViewData : contains data that user needs to pick from, nil means nothing to pick from
-    public func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) -> PickerViewData? {
-        // declare returnValue
-        var returnValue: PickerViewData?
-        
-        /// check if it's for one of the alert notification
-        loop: for alertKind in AlertKind.allCases {
-            if alertKind.notificationIdentifier() == notification.request.identifier {
-                // it is possible to play the sound, show the content and/or set the badge counter as explained here https://developer.apple.com/documentation/usernotifications/unnotificationpresentationoptions
-                // none of them seems useful here
-                completionHandler([])
-                
-                // create pickerViewData for the alertKind for which alert went off, and return it to the caller who in turn needs to allow the user to select a snoozeperiod
-                returnValue = createPickerViewData(forAlertKind: alertKind, content: notification.request.content, actionHandler: nil, cancelHandler: nil)
-            }
-        }
-        return returnValue
+    /// Native presentation keeps the current screen usable. Nil means this is
+    /// not an alarm and the caller should apply its other notification rules.
+    public func foregroundPresentation(for identifier: String) -> UNNotificationPresentationOptions? {
+        guard AlertKind.allCases.contains(where: { $0.notificationIdentifier() == identifier }) else { return nil }
+        // Custom override-mute playback has no content.sound, so .sound does not
+        // play a second copy. Silent alarm types still have no sound attached.
+        return [.banner, .list, .sound]
     }
     
     /// to unSnooze an already snoozed alert

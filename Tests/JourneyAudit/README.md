@@ -15,3 +15,9 @@ Launch arguments supply synthetic readings, meals and workouts only in Debug sim
 For large-text/dark inspection, record the simulator's current values first, set `simctl ui DEVICE content_size accessibility-extra-large` and `simctl ui DEVICE appearance dark`, run `testAccessibilityLayouts` plus `testMealCorrectionAndSavedCapture`, then restore the original values. Inspect attachments: navigation assertions alone are not an accessibility certification.
 
 Coverage and remaining integration limits: `docs/IOS_JOURNEY_AUDIT_4236.md`.
+
+Alarm regression journeys: `testAlarmTapOpensTodayWithoutSnoozePicker` and
+`testForegroundAlarmDoesNotInterruptMealCapture`. Their simulator-only fixtures
+exercise the production alarm interaction methods without delivering actual alarms.
+They verify native presentation options, unchanged snooze state on ordinary taps,
+the explicit Snooze action, chart routing and uninterrupted meal capture.

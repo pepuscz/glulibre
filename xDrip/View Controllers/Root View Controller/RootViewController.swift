@@ -3915,9 +3915,8 @@ extension RootViewController: UNUserNotificationCenterDelegate {
             bluetoothPeripheralManager?.initiatePairing()
         } else if notification.request.identifier.hasPrefix(LibreNFC.diagnosticWarmupNotificationIdentifierPrefix) {
             completionHandler([.banner, .list, .sound])
-            // this will verify if it concerns an alert notification, if not pickerviewData will be nil
-        } else if let pickerViewData = alertManager?.userNotificationCenter(center, willPresent: notification, withCompletionHandler: completionHandler) {
-            showJournalAlarmResponse(pickerViewData)
+        } else if let options = alertManager?.foregroundPresentation(for: notification.request.identifier) {
+            completionHandler(options)
         }  else if notification.request.identifier == ConstantsNotifications.notificationIdentifierForVolumeTest {
             // user is testing iOS Sound volume in the settings. Only the sound should be played, the alert itself will not be shown
             completionHandler([.sound, .list])
@@ -3951,20 +3950,58 @@ extension RootViewController: UNUserNotificationCenterDelegate {
         } else if response.notification.request.identifier.hasPrefix(LibreNFC.diagnosticWarmupNotificationIdentifierPrefix) {
             journalExperience?.showSensorSetup()
         } else {
-            // it's not an initial calibration request notification that the user clicked, by calling alertManager?.userNotificationCenter, we check if it was an alert notification that was clicked and if yes pickerViewData will have the list of alert snooze values
-            if let pickerViewData = alertManager?.userNotificationCenter(center, didReceive: response) {
-                trace("in userNotificationCenter didReceive, user pressed an alert notification to open the app", log: log, category: ConstantsLog.categoryRootView, type: .info)
-                showJournalAlarmResponse(pickerViewData)
-            } else {
-                // it as also not an alert notification that the user clicked, there might come in other types of notifications in the future
-            }
+            handleAlarmNotificationResponse(identifier: response.notification.request.identifier,
+                                            actionIdentifier: response.actionIdentifier, response: response)
         }
     }
 
-    private func showJournalAlarmResponse(_ data: PickerViewData) {
-        if let journalExperience { journalExperience.showAlarmResponse(data) }
-        else { PickerViewControllerModal.displayPickerViewController(pickerViewData: data, parentController: self) }
+    private func handleAlarmNotificationResponse(identifier: String, actionIdentifier: String,
+                                                 response: UNNotificationResponse?) {
+        guard alertManager?.handleNotificationResponse(identifier: identifier,
+                actionIdentifier: actionIdentifier, response: response) == true else { return }
+        // Select the chart without dismissing an in-progress meal editor/camera.
+        tabBarController?.selectedViewController = self
     }
+
+    #if targetEnvironment(simulator) && DEBUG
+    /// Runs the same interaction paths as iOS, without delivering a real alarm.
+    /// UI tests fail if any assertion terminates the app. Never compiled for a device.
+    func auditAlarmInteractions(openToday: Bool) {
+        guard let alertManager else { preconditionFailure("Alarm engine not ready") }
+        for kind in AlertKind.allCases {
+            let state = alertManager.getSnoozeParameters(alertKind: kind)
+            let originalDate = state.snoozeTimeStamp
+            let originalPeriod = state.snoozePeriodInMinutes
+            let options = alertManager.foregroundPresentation(for: kind.notificationIdentifier())
+            precondition(options == [.banner, .list, .sound])
+            let opensToday = alertManager.handleNotificationResponse(
+                identifier: kind.notificationIdentifier(),
+                actionIdentifier: UNNotificationDefaultActionIdentifier, response: nil)
+            precondition(opensToday)
+            precondition(state.snoozeTimeStamp == originalDate && state.snoozePeriodInMinutes == originalPeriod)
+        }
+        precondition(alertManager.foregroundPresentation(for: "unrelated-notification") == nil)
+        precondition(!alertManager.handleNotificationResponse(identifier: "unrelated-notification",
+            actionIdentifier: UNNotificationDefaultActionIdentifier, response: nil))
+        let low = alertManager.getSnoozeParameters(alertKind: .low)
+        let originalDate = low.snoozeTimeStamp
+        let originalPeriod = low.snoozePeriodInMinutes
+        precondition(!alertManager.handleNotificationResponse(identifier: AlertKind.low.notificationIdentifier(),
+            actionIdentifier: UNNotificationDismissActionIdentifier, response: nil))
+        precondition(low.snoozeTimeStamp == originalDate && low.snoozePeriodInMinutes == originalPeriod)
+        // Only the explicit notification action changes snooze state.
+        precondition(!alertManager.handleNotificationResponse(identifier: AlertKind.low.notificationIdentifier(),
+            actionIdentifier: "snoozeActionIdentifier", response: nil))
+        precondition(low.snoozeTimeStamp != nil && low.snoozeTimeStamp != originalDate)
+        low.snoozeTimeStamp = originalDate
+        low.snoozePeriodInMinutes = originalPeriod
+        coreDataManager?.saveChanges()
+        if openToday {
+            handleAlarmNotificationResponse(identifier: AlertKind.low.notificationIdentifier(),
+                actionIdentifier: UNNotificationDefaultActionIdentifier, response: nil)
+        }
+    }
+    #endif
 }
 
 // MARK: - conform to FollowerDelegate protocol
