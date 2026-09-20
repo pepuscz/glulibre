@@ -8,3 +8,5 @@ xcodebuild test -project Tests/WatchJourneyAudit/LibreWatchJourneyAudit.xcodepro
 ```
 
 Use a unique `-resultBundlePath` to retain screenshots and element trees. Inspect screenshots, not only test assertions. Simulator-only fixtures include fresh, stale, empty, mg/dL, collecting and limited meal responses; large type and dimmed privacy are also covered. No credentials, pairing, meal writes or Health export occur. Never run this suite on a physical Watch.
+
+Run on both 40 mm and 46 mm simulators. `testChartIsReadableWithoutScrolling` checks chart height, value/chart ordering and full chart visibility in both glucose units. Accessibility text may scroll, but the reading must remain legible.

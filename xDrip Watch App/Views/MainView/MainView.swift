@@ -4,6 +4,8 @@ import Charts
 /// Wrist-sized observation, not a second configuration surface or sensor controller.
 struct MainView: View {
     @EnvironmentObject private var state: WatchStateModel
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var readingScale: CGFloat = 1
     var now: Date
     private var compact: Bool { WKInterfaceDevice.current().screenBounds.width < 185 }
 
@@ -14,11 +16,13 @@ struct MainView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 4) {
-                Text(fresh ? "Glucose" : (state.bgReadingDate() == nil ? "Waiting for iPhone" : "Reading out of date"))
-                    .font(.headline).foregroundStyle(fresh ? Color.secondary : Color.orange)
+                if !fresh {
+                    Text(state.bgReadingDate() == nil ? "Waiting for iPhone" : "Reading out of date")
+                        .font(.headline).foregroundStyle(.orange)
+                }
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(fresh ? WatchGlancePolicy.valueText(state.bgValueInMgDl(), isMgDl: state.isMgDl) : "—")
-                        .font(.system(size: compact ? 38 : 44, weight: .semibold, design: .rounded))
+                        .font(.system(size: (compact ? 38 : 44) * readingScale, weight: .semibold, design: .rounded))
                         .monospacedDigit().minimumScaleFactor(0.65).lineLimit(1)
                         .accessibilityIdentifier("watch.glucose")
                     if fresh {
@@ -26,12 +30,16 @@ struct MainView: View {
                             .font(.title2).foregroundStyle(.mint)
                             .accessibilityLabel(WatchGlancePolicy.trendDescription(state.slopeOrdinal))
                     }
-                }.privacySensitive()
-                HStack {
-                    Text(fresh || state.bgReadingDate() == nil ? state.bgUnitString() : "Last \(WatchGlancePolicy.valueText(state.bgValueInMgDl(), isMgDl: state.isMgDl)) \(state.bgUnitString())")
                     Spacer(minLength: 2)
-                    Text(WatchGlancePolicy.ageText(date: state.bgReadingDate(), now: now))
-                }.font(.caption2).foregroundStyle(.secondary)
+                    if !typeSize.isAccessibilitySize { unitLabel }
+                }.privacySensitive()
+                if typeSize.isAccessibilitySize { unitLabel }
+                if !fresh, let date = state.bgReadingDate() {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Last \(WatchGlancePolicy.valueText(state.bgValueInMgDl(), isMgDl: state.isMgDl)) \(state.bgUnitString())")
+                        Text(WatchGlancePolicy.ageText(date: date, now: now))
+                    }.font(.caption2).foregroundStyle(.secondary).privacySensitive()
+                }
                 if state.bgReadingDates.isEmpty {
                     Image(systemName: "iphone.radiowaves.left.and.right")
                         .font(.largeTitle).foregroundStyle(.mint).frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -40,12 +48,22 @@ struct MainView: View {
                 } else {
                     WatchHistoryChart(values: state.bgReadingValues, dates: state.bgReadingDates,
                         sensorIDs: state.bgReadingSensorIDs, isMgDl: state.isMgDl, now: now, fresh: fresh)
-                        .frame(height: compact ? 28 : 44).privacySensitive()
-                    HStack { Text("3 hours"); Spacer(); Text("Now") }
+                        .frame(height: compact ? 72 : 104).privacySensitive()
+                        .accessibilityIdentifier("watch.chart")
+                    HStack {
+                        Text("3 hours")
+                        Spacer()
+                        Text("Now").accessibilityIdentifier("watch.chart.end")
+                    }
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }.padding(.horizontal, 6)
         }.accessibilityIdentifier("watch.now")
+    }
+
+    private var unitLabel: some View {
+        Text(state.bgUnitString()).font(.caption2).foregroundStyle(.secondary)
+            .lineLimit(1).fixedSize()
     }
 }
 

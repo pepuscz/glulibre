@@ -59,3 +59,12 @@ Repeatable suite: `Tests/WatchJourneyAudit/project.yml` and `Journeys/WatchJourn
   Build log: `/private/tmp/libre-watch-4239-device-retry.log`.
 - Successful launch does not establish receipt of current glucose on the Watch;
   live sync, complications, notifications, and Always On still need acceptance checks.
+
+## Chart layout follow-up — build 4244
+
+- The chart is now 72 points tall on compact watches and 104 points on larger watches (previously 28/44).
+- A single reading/arrow/units row replaces the fresh-state heading and update-age row. At accessibility text sizes, units move below the reading so the number stays legible.
+- Explicit missing/stale labels, historical-value age and the seven-minute freshness policy remain. Larger text and stale details can scroll.
+- The three-hour window, y-axis scaling, linear interpolation and missing-data/sensor boundaries are unchanged. This is a layout change, not a change in glucose interpretation or sensor behavior.
+- The layout regression checks both glucose units, a minimum chart height and complete chart visibility without scrolling at standard text size. Large-text tests also check that the reading is not squeezed smaller by the units.
+- Validation: simulator build 4244, 59 unit tests and four UI journeys on each of the 40 mm and 46 mm simulators passed. Standard and accessibility-size screenshots were inspected; large text intentionally scrolls. The README uses the final 40 mm capture with synthetic data. Physical-device installation and acceptance were not performed for this layout-only update.

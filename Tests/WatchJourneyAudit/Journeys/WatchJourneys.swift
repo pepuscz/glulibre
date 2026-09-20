@@ -28,6 +28,25 @@ final class WatchJourneys: XCTestCase {
         app.buttons["watch.refresh"].tap()
     }
 
+    func testChartIsReadableWithoutScrolling() {
+        let app = XCUIApplication(bundleIdentifier: "com.652PWHFDA9.libredebug.watchkitapp")
+        for (name, flags) in [("Chart-mmol", [String]()), ("Chart-mgdl", ["--watch-mgdl"])] {
+            app.launchArguments = ["--watch-demo"] + flags
+            app.launch()
+            let reading = app.staticTexts["watch.glucose"]
+            XCTAssertTrue(reading.waitForExistence(timeout: 10))
+            let chart = app.descendants(matching: .any)["watch.chart"].firstMatch
+            XCTAssertTrue(chart.waitForExistence(timeout: 5))
+            XCTAssertGreaterThanOrEqual(chart.frame.height, 70)
+            XCTAssertGreaterThanOrEqual(chart.frame.minY, reading.frame.maxY)
+            XCTAssertLessThanOrEqual(chart.frame.maxY, app.frame.maxY - 12)
+            XCTAssertTrue(chart.isHittable)
+            XCTAssertTrue(app.staticTexts["watch.chart.end"].isHittable)
+            capture(name, app: app)
+            app.terminate()
+        }
+    }
+
     func testEmptyStaleAndMealStates() {
         let app = XCUIApplication(bundleIdentifier: "com.652PWHFDA9.libredebug.watchkitapp")
         for (name, flags, label) in [
@@ -53,6 +72,12 @@ final class WatchJourneys: XCTestCase {
             app.launchArguments = ["--watch-demo", "--watch-large", page]
             app.launch()
             XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+            if page.isEmpty {
+                let reading = app.staticTexts["watch.glucose"]
+                XCTAssertTrue(reading.waitForExistence(timeout: 5))
+                XCTAssertTrue(reading.isHittable)
+                XCTAssertGreaterThanOrEqual(reading.frame.height, 38)
+            }
             capture("Large-" + page, app: app)
             if page == "--watch-connection" {
                 for _ in 0..<4 {
