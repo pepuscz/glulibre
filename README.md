@@ -9,6 +9,7 @@ Photograph a meal, add an optional note, and see the glucose response.
 <p>
   <img src="docs/media/today.png" width="265" alt="Today: current glucose and the interactive chart">
   <img src="docs/media/food-comparison.png" width="265" alt="Compare repeated whole-meal responses">
+  <img src="docs/media/watch.png" width="180" alt="Apple Watch app: glucose reading, trend arrow and recent chart">
 </p>
 
 *Simulator screenshots with synthetic data.*
