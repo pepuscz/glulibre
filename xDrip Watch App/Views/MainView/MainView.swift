@@ -43,7 +43,7 @@ struct MainView: View {
                 if state.bgReadingDates.isEmpty {
                     Image(systemName: "iphone.radiowaves.left.and.right")
                         .font(.largeTitle).foregroundStyle(.mint).frame(maxWidth: .infinity).padding(.vertical, 12)
-                    Text("Open Libre Debug on your iPhone. Your sensor stays connected there.")
+                    Text("Open \(ConstantsHomeView.applicationName) on your iPhone. Your sensor stays connected there.")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
                     WatchHistoryChart(values: state.bgReadingValues, dates: state.bgReadingDates,

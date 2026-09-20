@@ -1,6 +1,6 @@
-# Modified for Libre Debug on 2026-09-20; upstream history retains the original workflow.
-name: Build Libre Debug (manual)
-run-name: Build Libre Debug (${{ github.ref_name }})
+# Modified for GluLibre on 2026-09-20; upstream history retains the original workflow.
+name: Build GluLibre (manual)
+run-name: Build GluLibre (${{ github.ref_name }})
 on:
   workflow_dispatch:
     inputs:

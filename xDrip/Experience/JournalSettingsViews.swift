@@ -39,7 +39,7 @@ struct JournalSettingsView: View {
                     NavigationLink { support } label: { Label("Help & sensor care", systemImage: "questionmark.circle") }
                     NavigationLink { JournalLegalView() } label: { Label("About & licenses", systemImage: "info.circle") }
                 } footer: {
-                    Text("Libre Debug · Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—")")
+                    Text("\(ConstantsHomeView.applicationName) · Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—")")
                         .frame(maxWidth: .infinity).padding(.top, 16)
                 }
             }.navigationTitle("Settings")
@@ -92,10 +92,10 @@ struct JournalSettingsView: View {
 private struct JournalLegalView: View {
     var body: some View {
         List {
-            Section("Libre Debug") {
+            Section(ConstantsHomeView.applicationName) {
                 Text("An experimental meal and glucose journal, built on xDrip4iOS.")
                 Text("Modified fork · 24 August–20 September 2026").font(.subheadline).foregroundStyle(.secondary)
-                Link("Fork source code", destination: URL(string: "https://github.com/pepuscz/xdripswift")!)
+                Link("Source code", destination: URL(string: ConstantsHomeView.gitHubURL)!)
                 Link("Upstream xDrip4iOS", destination: URL(string: "https://github.com/JohanDegraeve/xdripswift")!)
             }
             Section("Free software") {
@@ -214,7 +214,7 @@ struct JournalHealthSettingsView: View {
                 Text("Confirmed nutrition only. Photos and notes stay out of Health.")
             }
             Section("Your permissions") {
-                Text("Manage access in Health → your profile → Apps → Libre Debug.")
+                Text("Manage access in Health → your profile → Apps → \(ConstantsHomeView.applicationName).")
                     .foregroundStyle(.secondary)
             }
         }.navigationTitle("Apple Health").navigationBarTitleDisplayMode(.inline)

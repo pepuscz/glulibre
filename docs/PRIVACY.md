@@ -15,4 +15,4 @@ Health records are not deleted by disconnecting context. HealthKit read denials 
 
 ## Screenshots and bug reports
 
-Repository screenshots use synthetic simulator data. Never publish another person's glucose history, meal photos, device/sensor identifiers, API keys or diagnostic logs without their informed permission. Redact reports before posting a public issue. A private security-reporting channel has not been verified for this repository; do not paste secrets into GitHub issues.
+Repository screenshots use synthetic simulator data except the explicitly approved real-meal timeline identified in [media notes](media/README.md). Never publish another person's glucose history, meal photos, device/sensor identifiers, API keys or diagnostic logs without their informed permission. Redact reports before posting a public issue. A private security-reporting channel has not been verified for this repository; do not paste secrets into GitHub issues.

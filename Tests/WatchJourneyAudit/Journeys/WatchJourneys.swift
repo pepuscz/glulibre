@@ -60,6 +60,9 @@ final class WatchJourneys: XCTestCase {
             app.launchArguments = ["--watch-demo"] + flags
             app.launch()
             XCTAssertTrue(app.staticTexts[label].waitForExistence(timeout: 5))
+            if name == "Empty" {
+                XCTAssertTrue(app.staticTexts["Open GluLibre on your iPhone. Your sensor stays connected there."].exists)
+            }
             capture(name, app: app)
             if name == "Stale" || name == "Empty" { XCTAssertEqual(app.staticTexts["watch.glucose"].label, "—") }
             app.terminate()

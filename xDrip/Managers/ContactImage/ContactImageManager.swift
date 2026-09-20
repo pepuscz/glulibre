@@ -183,9 +183,14 @@ class ContactImageManager: NSObject {
                 trace("in updateContact, no stored contact identifier (or empty). Falling back to name search.", log: self.log, category: ConstantsLog.categoryContactImageManager, type: .info)
             }
 
-            // 2) Fallback: match by application name
-            let namePredicate = CNContact.predicateForContacts(matchingName: ConstantsHomeView.applicationName)
-            let nameMatches = (try? self.contactStore.unifiedContacts(matching: namePredicate, keysToFetch: keyToFetch)) ?? []
+            // 2) Recover an existing auto-created contact after a branding change.
+            // Keep its identifier and user-edited name; don't create a duplicate.
+            var nameMatches: [CNContact] = []
+            for name in [ConstantsHomeView.applicationName, ConstantsHomeView.bluetoothRestorationName] {
+                let namePredicate = CNContact.predicateForContacts(matchingName: name)
+                nameMatches = (try? self.contactStore.unifiedContacts(matching: namePredicate, keysToFetch: keyToFetch)) ?? []
+                if !nameMatches.isEmpty { break }
+            }
 
             if let nameMatchedContact = nameMatches.first {
                 if nameMatches.count > 1 {
@@ -226,6 +231,7 @@ class ContactImageManager: NSObject {
             self.executeSaveRequest(saveRequest: saveRequest)
 
             // After creating, fetch by name once and store the resulting identifier (avoid storing empty identifier before save)
+            let namePredicate = CNContact.predicateForContacts(matchingName: ConstantsHomeView.applicationName)
             let postCreateMatches = (try? self.contactStore.unifiedContacts(matching: namePredicate, keysToFetch: keyToFetch)) ?? []
             if let postCreateContact = postCreateMatches.first {
                 UserDefaults.standard.set(postCreateContact.identifier, forKey: self.contactIdentifierKey)

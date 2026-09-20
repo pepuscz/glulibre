@@ -1,4 +1,4 @@
-# Build and maintain Libre Debug
+# Build and maintain GluLibre
 
 ## Local build
 
@@ -13,13 +13,15 @@ Use macOS, Xcode with the required iOS/watchOS SDKs, and Swift Package Manager. 
 xcodebuild -workspace xdrip.xcworkspace \
   -scheme xdrip -configuration Debug \
   -destination 'id=YOUR_DEVICE_UDID' \
-  -derivedDataPath DerivedData-LibreDebug \
+  -derivedDataPath DerivedData-GluLibre \
   -allowProvisioningUpdates build
 ```
 
 For an existing installation, keep its bundle identifiers, signing team, app groups and Keychain access unchanged. Install an update in place; do not uninstall to fix a build error. Never reactivate or re-pair a working sensor just to test UI changes.
 
 The Watch companion has its own target and provisioning requirements. Follow [Watch notes](WATCH_COMPANION_4238.md); don't assume an iPhone provisioning profile also covers the Watch.
+
+The GluLibre rename changes presentation only. Internal project/scheme names and storage keys remain unchanged. `BLUETOOTH_RESTORE_NAME` must retain the old display name (`Libre Debug` for this fork); it is independent of `MAIN_APP_DISPLAY_NAME`. [Brand assets and compatibility](brand/README.md).
 
 ## Tests
 

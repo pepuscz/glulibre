@@ -10,6 +10,8 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>$(MAIN_APP_DISPLAY_NAME)</string>
+	<key>GlucoseBluetoothRestoreName</key>
+	<string>$(BLUETOOTH_RESTORE_NAME)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -17,7 +19,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>$(MAIN_APP_DISPLAY_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -35,6 +37,12 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>INAlternativeAppNames</key>
 	<array>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Glu Libre</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>glue lee bray</string>
+		</dict>
 		<dict>
 			<key>INAlternativeAppName</key>
 			<string>xDrip</string>
@@ -59,7 +67,7 @@
 	<key>MainAppBundleIdentifier</key>
 	<string>$(MAIN_APP_BUNDLE_IDENTIFIER)</string>
 	<key>NFCReaderUsageDescription</key>
-	<string>xDrip4iO5 uses NFC to scan Libre sensors.</string>
+	<string>GluLibre uses NFC to scan Libre sensors.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict/>
 	<key>NSBluetoothAlwaysUsageDescription</key>

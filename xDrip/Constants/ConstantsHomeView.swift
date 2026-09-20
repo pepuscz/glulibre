@@ -8,8 +8,11 @@ enum ConstantsHomeView {
     /// how often to update the labels in the homeview (ie label with latest reading, minutes ago, etc..)
     static let updateHomeViewIntervalInSeconds = 15.0
     
-    /// info email adres, appears in licenseInfo
-    static let infoEmailAddress = "xdrip@proximus.be"
+    /// Support belongs to this fork, not the upstream maintainer.
+    static let supportURL = "https://github.com/pepuscz/glulibre/issues"
+
+    /// CoreBluetooth restoration is persistent identity, not a user-facing label.
+    static let bluetoothRestorationName = Bundle.main.object(forInfoDictionaryKey: "GlucoseBluetoothRestoreName") as? String ?? "Libre Debug"
     
     /// application name, appears in licenseInfo as title
     static let applicationName: String = {
@@ -35,7 +38,7 @@ enum ConstantsHomeView {
     static let onlineHelpURLTranslated2 = "&_x_tr_hl=es&_x_tr_pto=nui"
 
     /// github.com repository URL for the project
-    static let gitHubURL = "https://github.com/JohanDegraeve/xdripswift"
+    static let gitHubURL = "https://github.com/pepuscz/glulibre"
     
     // MARK: - Sensor Info View
     

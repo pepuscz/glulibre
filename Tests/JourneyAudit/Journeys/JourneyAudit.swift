@@ -36,6 +36,10 @@ final class JourneyAudit: XCTestCase {
     func testOfflineLicensesRemainAvailable() {
         app.tabBars.buttons["Settings"].tap()
         XCTAssertTrue(tap("About & licenses", scroll: true))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "GluLibre")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Source code"].exists)
+        XCTAssertTrue(app.buttons["Upstream xDrip4iOS"].exists)
+        XCTAssertFalse(app.debugDescription.contains("Libre Debug"))
         capture("about-licenses")
         XCTAssertTrue(tap("GNU GPL v3", scroll: true))
         let text = app.staticTexts["journal.legal.text"]

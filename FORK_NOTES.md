@@ -1,6 +1,6 @@
 # Fork history
 
-Libre Debug is a modified version of [xDrip4iOS / xdripswift](https://github.com/JohanDegraeve/xdripswift), not an upstream release. Original copyrights, source headers and the GPL license remain in place. See [NOTICE.md](NOTICE.md).
+GluLibre is a modified version of [xDrip4iOS / xdripswift](https://github.com/JohanDegraeve/xdripswift), not an upstream release. Original copyrights, source headers and the GPL license remain in place. See [NOTICE.md](NOTICE.md).
 
 ## Starting point
 
@@ -10,6 +10,8 @@ Libre Debug is a modified version of [xDrip4iOS / xdripswift](https://github.com
 - `master` was retained as an upstream 7.x mirror. Do not automatically merge that architecture into this fork; port deliberately and revalidate on hardware.
 
 ## What changed
+
+- GluLibre branding in build 4245: new name and original teal icon across iPhone, Watch and glance surfaces. Storage, signing and Bluetooth restoration identities are retained; upstream credits and license text are unchanged.
 
 - Libre 2/2+ diagnostic flow, warm-up completion notification, completion haptics and Bluetooth handoff recovery. The replacement Libre 2 Plus EU sensor delivered valid readings in physical-device testing on 19 September 2026. The fork's diagnostic additions are Debug-only; this does not certify every sensor or region.
 - Photo-first meal journal with optional notes, durable saving before background analysis, editable food estimates and confirmed nutrition export.

@@ -2,7 +2,7 @@
 
 **This is a modified fork, not the original xDrip4iOS release.**
 
-Libre Debug is based on [JohanDegraeve/xdripswift](https://github.com/JohanDegraeve/xdripswift), upstream version 6.3.3, commit `69eb8833`. Copyright belongs to Johan Degraeve and the other authors credited in the source and Git history. Those notices have not been replaced by this fork's branding.
+GluLibre is based on [JohanDegraeve/xdripswift](https://github.com/JohanDegraeve/xdripswift), upstream version 6.3.3, commit `69eb8833`. Copyright belongs to Johan Degraeve and the other authors credited in the source and Git history. Those notices have not been replaced by this fork's branding.
 
 Fork changes dated **2026-08-24 through 2026-09-20** cover Libre diagnostics, meal capture and analysis, personal food-response observations, Apple Health context, iPhone/Watch UI, testing and repository documentation. [Fork history](FORK_NOTES.md) describes the changes; individual commits and retained headers establish their provenance.
 

@@ -854,7 +854,7 @@ final class RootViewController: UIViewController, ObservableObject {
             // if licenseinfo not yet accepted, show license info with only ok button
             if !UserDefaults.standard.licenseInfoAccepted && !JournalModel.isSimulatorUITest {
                 
-                let alert = UIAlertController(title: ConstantsHomeView.applicationName, message: Texts_HomeView.licenseInfo + ConstantsHomeView.infoEmailAddress, actionHandler: {
+                let alert = UIAlertController(title: ConstantsHomeView.applicationName, message: Texts_HomeView.licenseInfo + ConstantsHomeView.supportURL, actionHandler: {
                     
                     // set licenseInfoAccepted to true
                     UserDefaults.standard.licenseInfoAccepted = true

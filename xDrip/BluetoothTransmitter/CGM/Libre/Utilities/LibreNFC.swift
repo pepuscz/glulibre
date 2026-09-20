@@ -164,7 +164,7 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
             guard remaining > 0 else { return }
             let content = UNMutableNotificationContent()
             content.title = "Sensor warm-up finished"
-            content.body = "Open Libre Debug to check your sensor and finish setup if needed."
+            content.body = "Open \(ConstantsHomeView.applicationName) to check your sensor and finish setup if needed."
             content.sound = .default
 
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, remaining), repeats: false)

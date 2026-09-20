@@ -1,6 +1,6 @@
 # Evidence and limits
 
-Libre Debug is a learning tool for personal observation, not a promise of disease prevention or longevity.
+GluLibre is a learning tool for personal observation, not a promise of disease prevention or longevity.
 
 ## Individual responses
 

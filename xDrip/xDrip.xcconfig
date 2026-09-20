@@ -7,7 +7,11 @@
 MAIN_APP_BUNDLE_IDENTIFIER = com.$(DEVELOPMENT_TEAM).xdripswift
 
 // Application name [DEFAULT]
-MAIN_APP_DISPLAY_NAME = Libre Debug
+MAIN_APP_DISPLAY_NAME = GluLibre
+INFOPLIST_KEY_CFBundleName = $(MAIN_APP_DISPLAY_NAME)
+
+// Compatibility identity, not branding. Keep the pre-rename Bluetooth restore name.
+BLUETOOTH_RESTORE_NAME = Libre Debug
 
 // Entitlements [DEFAULT]
 XDRIP_ENTITLEMENTS_RELEASE = xdrip/xDrip.entitlements

@@ -928,8 +928,8 @@ class BluetoothTransmitter: NSObject, CBCentralManagerDelegate, CBPeripheralDele
             trace("in initialize, creating centralManager for peripheral with address %{public}@", log: log, category: ConstantsLog.categoryBlueToothTransmitter, type: .info, deviceAddress)
             
             // if it's an existing device, then restore identifier key will contain the device address, which is unique worldwide
-            // the application name is also in the identifier key
-            cBCentralManagerOptionRestoreIdentifierKeyToUse = ConstantsHomeView.applicationName + "-" + deviceAddress
+            // A display-name change must not change the background-restoration identity.
+            cBCentralManagerOptionRestoreIdentifierKeyToUse = ConstantsHomeView.bluetoothRestorationName + "-" + deviceAddress
             trace("in initialize, restoreID created (stable from address): %{public}@", log: log, category: ConstantsLog.categoryBlueToothTransmitter, type: .info, cBCentralManagerOptionRestoreIdentifierKeyToUse!)
             
         } else {
@@ -938,7 +938,7 @@ class BluetoothTransmitter: NSObject, CBCentralManagerDelegate, CBPeripheralDele
             // if it's a new device, then restore identifier key will contain random string. The application name is also in the identifier key
             let randomPart = String((0..<24).map{ _ in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".randomElement()!})
             
-            cBCentralManagerOptionRestoreIdentifierKeyToUse = ConstantsHomeView.applicationName + "-" + randomPart
+            cBCentralManagerOptionRestoreIdentifierKeyToUse = ConstantsHomeView.bluetoothRestorationName + "-" + randomPart
             
             trace("in initialize, restoreID created (random, no known address yet): %{public}@", log: log, category: ConstantsLog.categoryBlueToothTransmitter, type: .info, cBCentralManagerOptionRestoreIdentifierKeyToUse!)
         }

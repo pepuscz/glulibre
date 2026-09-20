@@ -56,7 +56,7 @@ struct JournalInsightsView: View {
         Form {
             JournalHealthContextSettings(health: health)
             Section("Check access & sync") {
-                Text("In Health, open your profile → Apps → Libre Debug to review access.")
+                Text("In Health, open your profile → Apps → \(ConstantsHomeView.applicationName) to review access.")
                 Text("Check that your workout appears in Health. Recent Watch workouts may need time to sync.")
             }.foregroundStyle(.secondary)
         }.navigationTitle("Health access").navigationBarTitleDisplayMode(.inline)

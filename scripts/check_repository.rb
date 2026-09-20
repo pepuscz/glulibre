@@ -6,8 +6,24 @@ require 'pathname'
 
 root = Pathname.new(__dir__).parent
 pages = %w[README.md FORK_NOTES.md NOTICE.md CONTRIBUTING.md docs/README.md
-           docs/DEVELOPMENT.md docs/PRIVACY.md docs/LICENSING.md docs/EVIDENCE.md docs/media/README.md]
+           docs/DEVELOPMENT.md docs/PRIVACY.md docs/LICENSING.md docs/EVIDENCE.md docs/media/README.md docs/brand/README.md]
 failures = []
+
+# Presentation may change; device restoration, storage and upstream notices must not.
+config = root.join('xDrip/xDrip.xcconfig').read
+failures << 'Wrong public app name' unless config.include?('MAIN_APP_DISPLAY_NAME = GluLibre')
+failures << 'Bluetooth restoration prefix changed' unless config.include?('BLUETOOTH_RESTORE_NAME = Libre Debug')
+info = root.join('xDrip/Supporting Files/Info.plist').read
+failures << 'Bluetooth identity must be independent of branding' unless info.include?('<string>$(BLUETOOTH_RESTORE_NAME)</string>')
+failures << 'Existing deep links must remain valid' unless info.include?('<string>xdripswift</string>')
+bluetooth = root.join('xDrip/BluetoothTransmitter/Generic/BluetoothTransmitter.swift').read
+failures << 'Bluetooth restore identity uses mutable branding' if bluetooth.include?('ConstantsHomeView.applicationName')
+%w[README.md NOTICE.md FORK_NOTES.md].each do |page|
+  failures << "#{page}: missing upstream provenance" unless root.join(page).read.include?('https://github.com/JohanDegraeve/xdripswift')
+end
+Dir.glob(root.join('xDrip/Experience/*.swift').to_s).each do |file|
+  failures << "#{file}: old visible product name" if File.read(file).include?('Libre Debug')
+end
 pages.each do |page|
   file = root.join(page)
   text = file.read

@@ -1,8 +1,10 @@
-# Libre Debug
+# GluLibre
 
-### Your meals. Your glucose. Your patterns.
+<img src="docs/brand/glulibre.svg" width="72" alt="GluLibre icon">
 
-Photograph a meal, add an optional note, and see the glucose response.
+### Your glucose. Your data. Your choice.
+
+An open-source glucose and meal journal for iPhone and Apple Watch. Photograph a meal, add an optional note, and see your response.
 
 [Build & install](docs/DEVELOPMENT.md) · [Privacy](docs/PRIVACY.md) · [Credits](NOTICE.md)
 
@@ -44,4 +46,4 @@ Modified fork of [xDrip4iOS](https://github.com/JohanDegraeve/xdripswift) by Joh
 
 This product includes software developed by the "Marcin Krzyzanowski" (http://krzyzanowskim.com/). Legacy icons: [Icons8](https://icons8.com/).
 
-[Contribute](CONTRIBUTING.md) · [Documentation](docs/README.md) · [Report an issue](https://github.com/pepuscz/xdripswift/issues)
+[Contribute](CONTRIBUTING.md) · [Documentation](docs/README.md) · [Report an issue](https://github.com/pepuscz/glulibre/issues)
