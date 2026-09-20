@@ -6,7 +6,7 @@ require 'pathname'
 
 root = Pathname.new(__dir__).parent
 pages = %w[README.md FORK_NOTES.md NOTICE.md CONTRIBUTING.md docs/README.md
-           docs/DEVELOPMENT.md docs/PRIVACY.md docs/LICENSING.md docs/media/README.md]
+           docs/DEVELOPMENT.md docs/PRIVACY.md docs/LICENSING.md docs/EVIDENCE.md docs/media/README.md]
 failures = []
 pages.each do |page|
   file = root.join(page)

@@ -4,6 +4,7 @@ Start with the [product README](../README.md).
 
 ## Current guides
 
+- [Evidence and limits](EVIDENCE.md)
 - [Build, test and architecture](DEVELOPMENT.md)
 - [Data and sharing](PRIVACY.md)
 - [License and distribution checklist](LICENSING.md)
