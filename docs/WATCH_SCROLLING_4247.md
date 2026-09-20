@@ -26,8 +26,9 @@ missing/stale data and dimmed privacy.
 - All 61 pure regression tests passed; signed iPhone and Watch builds passed.
 - iPhone 4247 installed in place. Private before/after checks retained meal files,
   all existing glucose records and sensor identity/start/end dates.
-- Direct physical Watch installation was blocked by device reachability at this
-  checkpoint. Do not treat simulator checks as proof of physical installation.
+- After device reachability was restored, physical Watch 4247 installed and
+  launched in place; installed bundle metadata confirmed the version. Hardware
+  Crown feel still needs a hands-on check, separate from simulator navigation tests.
 
 Tests use Apple's [Digital Crown automation API](https://developer.apple.com/documentation/xcuiautomation/xcuidevice/rotatedigitalcrown(delta:velocity:)),
 not swipe gestures presented as Crown tests. The [test guide](../Tests/WatchJourneyAudit/README.md)
