@@ -1,174 +1,169 @@
-//
-//  MainView.swift
-//  xDrip Watch App
-//
-//  Created by Paul Plant on 11/2/24.
-//  Copyright © 2024 Johan Degraeve. All rights reserved.
-//
-
 import SwiftUI
+import Charts
 
+/// Wrist-sized observation, not a second configuration surface or sensor controller.
 struct MainView: View {
-    @EnvironmentObject var watchState: WatchStateModel
-    
-    // get the array of different hour ranges from the constants file
-    // we'll move through this array as the user swipes left/right on the chart
-    let hoursToShow: [Double] = ConstantsAppleWatch.hoursToShow
-    
-    @State private var hoursToShowIndex: Int = ConstantsAppleWatch.hoursToShowDefaultIndex
-    
-    @State private var showDebug: Bool = false
-    
-    // store a boolean flag. We'll toggle this to refresh as needed
-    @State private var refreshView = false
-    
-    let isSmallScreen = WKInterfaceDevice.current().screenBounds.size.width < ConstantsAppleWatch.pixelWidthLimitForSmallScreen ? true : false
-    
-    // MARK: -  Body
+    @EnvironmentObject private var state: WatchStateModel
+    var now: Date
+    private var compact: Bool { WKInterfaceDevice.current().screenBounds.width < 185 }
+
+    private var fresh: Bool {
+        WatchGlancePolicy.isFresh(value: state.bgValueInMgDl(), date: state.bgReadingDate(), now: now)
+    }
+
     var body: some View {
-        
-        let overrideChartHeight: Double? = isSmallScreen ? (watchState.deviceStatusIconImage() == nil ? ConstantsGlucoseChartSwiftUI.viewHeightWatchAppSmall : ConstantsGlucoseChartSwiftUI.viewHeightWatchAppSmallWithAIDStatus) : nil
-        
-        let overrideChartWidth: Double? = isSmallScreen ? (watchState.deviceStatusIconImage() == nil ? ConstantsGlucoseChartSwiftUI.viewWidthWatchAppSmallWithAIDStatus : ConstantsGlucoseChartSwiftUI.viewWidthWatchAppSmall) : nil
-        
-        ZStack(alignment: Alignment(horizontal: .center, vertical: .center), content: {
-            VStack(spacing: 2) {
-                MainViewHeaderView()
-                    .padding([.leading, .trailing], 5)
-                    .padding([.top], -6)
-                    .padding([.bottom], -6)
-                    .id(refreshView)
-                    .onTapGesture(count: 2) {
-                        watchState.updateMainViewDate = Date()
-                        watchState.requestWatchStateUpdate()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(fresh ? "Glucose" : (state.bgReadingDate() == nil ? "Waiting for iPhone" : "Reading out of date"))
+                    .font(.headline).foregroundStyle(fresh ? Color.secondary : Color.orange)
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(fresh ? WatchGlancePolicy.valueText(state.bgValueInMgDl(), isMgDl: state.isMgDl) : "—")
+                        .font(.system(size: compact ? 38 : 44, weight: .semibold, design: .rounded))
+                        .monospacedDigit().minimumScaleFactor(0.65).lineLimit(1)
+                        .accessibilityIdentifier("watch.glucose")
+                    if fresh {
+                        Text(WatchGlancePolicy.trendSymbol(state.slopeOrdinal))
+                            .font(.title2).foregroundStyle(.mint)
+                            .accessibilityLabel(WatchGlancePolicy.trendDescription(state.slopeOrdinal))
                     }
-                
-                if watchState.deviceStatusIconImage() != nil {
-                    MainViewAIDStatusView()
-                        .padding([.leading,], 0)
-                        .padding([.trailing], 10)
-                        .padding([.top], 2)
-                        .padding([.bottom], 6)
+                }.privacySensitive()
+                HStack {
+                    Text(fresh || state.bgReadingDate() == nil ? state.bgUnitString() : "Last \(WatchGlancePolicy.valueText(state.bgValueInMgDl(), isMgDl: state.isMgDl)) \(state.bgUnitString())")
+                    Spacer(minLength: 2)
+                    Text(WatchGlancePolicy.ageText(date: state.bgReadingDate(), now: now))
+                }.font(.caption2).foregroundStyle(.secondary)
+                if state.bgReadingDates.isEmpty {
+                    Image(systemName: "iphone.radiowaves.left.and.right")
+                        .font(.largeTitle).foregroundStyle(.mint).frame(maxWidth: .infinity).padding(.vertical, 12)
+                    Text("Open Libre Debug on your iPhone. Your sensor stays connected there.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    WatchHistoryChart(values: state.bgReadingValues, dates: state.bgReadingDates,
+                        sensorIDs: state.bgReadingSensorIDs, isMgDl: state.isMgDl, now: now, fresh: fresh)
+                        .frame(height: compact ? 28 : 44).privacySensitive()
+                    HStack { Text("3 hours"); Spacer(); Text("Now") }
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
-                
-                GlucoseChartView(glucoseChartType: watchState.deviceStatusIconImage() == nil ? .watchApp : .watchAppWithAIDStatus, bgReadingValues: watchState.bgReadingValues, bgReadingDates: watchState.bgReadingDates, isMgDl: watchState.isMgDl, urgentLowLimitInMgDl: watchState.urgentLowLimitInMgDl, lowLimitInMgDl: watchState.lowLimitInMgDl, highLimitInMgDl: watchState.highLimitInMgDl, urgentHighLimitInMgDl: watchState.urgentHighLimitInMgDl, liveActivityType: nil, hoursToShowScalingHours: hoursToShow[hoursToShowIndex], glucoseCircleDiameterScalingHours: 4, overrideChartHeight: overrideChartHeight, overrideChartWidth: overrideChartWidth, highContrast: nil)
-                    .gesture(
-                        DragGesture(minimumDistance: 80, coordinateSpace: .local)
-                            .onEnded({ value in
-                                if (value.startLocation.x > value.location.x) {
-                                    if hoursToShow[hoursToShowIndex] != hoursToShow.first {
-                                        hoursToShowIndex -= 1
-                                    }
-                                } else {
-                                    if hoursToShow[hoursToShowIndex] != hoursToShow.last {
-                                        hoursToShowIndex += 1
-                                    }
-                                }
-                            })
-                    )
-                
-                MainViewDataSourceView()
-                
-                MainViewInfoView()
-            }
-            .padding(.bottom, 20)
-            
-            if showDebug {
-                Text(watchState.debugString)
-                    .foregroundStyle(.black)
-                    .font(.system(size: isSmallScreen ? 12 : 14))
-                    .multilineTextAlignment(.leading)
-                    .padding(EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5))
-                    .background(.teal).opacity(0.9)
-                    .cornerRadius(8)
-            }
-        })
-        .frame(maxHeight: .infinity)
-        .onReceive(watchState.timer) { date in
-            if watchState.updatedDate.timeIntervalSinceNow < -5 {
-                watchState.timerControlDate = date
-                watchState.requestWatchStateUpdate()
-                refreshView.toggle()
-            }
-        }
-        .onAppear {
-            watchState.requestWatchStateUpdate()
-            refreshView.toggle()
-        }
-        .onTapGesture(count: 5) {
-            showDebug = !showDebug
-        }
+            }.padding(.horizontal, 6)
+        }.accessibilityIdentifier("watch.now")
     }
 }
 
+struct WatchMealView: View {
+    @EnvironmentObject private var state: WatchStateModel
+    var now: Date
 
-// MARK: -  Preview
-struct ContentView_Previews: PreviewProvider {
-    
-    static func bgDateArray() -> [Date] {
-        let endDate = Date()
-        let startDate = endDate.addingTimeInterval(-3600 * 12)
-        var currentDate = startDate
-        
-        var dateArray: [Date] = []
-        
-        while currentDate < endDate {
-            dateArray.append(currentDate)
-            currentDate = currentDate.addingTimeInterval(60 * 5)
-        }
-        
-        return dateArray
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Last meal", systemImage: "fork.knife").font(.caption).foregroundStyle(.mint)
+                if let meal = state.lastMeal, now.timeIntervalSince1970 - meal.eatenAt < 86400,
+                   meal.eatenAt <= now.timeIntervalSince1970 {
+                    Text(meal.title).font(.headline).fixedSize(horizontal: false, vertical: true)
+                    if meal.state == "ready", let rise = meal.riseMgDl, rise.isFinite {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text("\(rise >= 0 ? "+" : "−")\(WatchGlancePolicy.valueTextForRise(abs(rise), isMgDl: state.isMgDl))")
+                                .font(.system(size: 34, weight: .semibold, design: .rounded)).monospacedDigit()
+                            Text(state.bgUnitString()).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Text("Peak rise · 2 hours").font(.caption).foregroundStyle(.secondary)
+                    } else if meal.state == "collecting" {
+                        let elapsed = max(0, now.timeIntervalSince1970 - meal.eatenAt)
+                        if elapsed < 7200 {
+                            ProgressView(value: elapsed, total: 7200).tint(.mint)
+                            Text("\(Int(ceil((7200 - elapsed) / 60))) min to observe")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Label("Waiting for sync", systemImage: "iphone")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Label("Response unavailable", systemImage: "chart.xyaxis.line").font(.caption)
+                        Text(meal.detail).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Text("Meal at \(Date(timeIntervalSince1970: meal.eatenAt).formatted(date: .omitted, time: .shortened))")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Image(systemName: "camera.fill").font(.largeTitle).foregroundStyle(.mint)
+                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                    Text("Capture food on iPhone").font(.headline)
+                    Text("Your latest meal and its response appear here.").font(.caption).foregroundStyle(.secondary)
+                }
+            }.padding(.horizontal, 6).privacySensitive()
+        }.accessibilityIdentifier("watch.meal")
     }
-    
-    static func bgValueArray() -> [Double] {
-        
-        var bgValueArray:[Double] = Array(repeating: 0, count: 144)
-        var currentValue: Double = 120
-        var increaseValues: Bool = true
-        
-        for index in bgValueArray.indices {
-            let randomValue = Double(Int.random(in: -10..<30))
-            
-            if currentValue < 70 {
-                increaseValues = true
-                bgValueArray[index] = currentValue + abs(randomValue)
-            } else if currentValue > 180 {
-                increaseValues = false
-                bgValueArray[index] = currentValue - abs(randomValue)
-            } else {
-                bgValueArray[index] = currentValue + (increaseValues ? randomValue : -randomValue)
-            }
-            currentValue = bgValueArray[index]
-        }
-        return bgValueArray
+}
+
+struct WatchConnectionView: View {
+    @EnvironmentObject private var state: WatchStateModel
+    var now: Date
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Connection", systemImage: "iphone").font(.headline)
+                Text(state.syncStatus).font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("watch.syncStatus")
+                Button(action: state.requestWatchStateUpdate) {
+                    Label(state.isRefreshing ? "Updating…" : "Refresh", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                }.tint(.mint).disabled(state.isRefreshing).accessibilityIdentifier("watch.refresh")
+                if let date = state.bgReadingDate() {
+                    LabeledContent("Last reading", value: date.formatted(date: .omitted, time: .shortened))
+                        .font(.caption).privacySensitive()
+                }
+                Text("Readings come through your iPhone, not directly from the sensor.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                if !state.liveDataIsEnabled {
+                    Text("For watch-face readings, open Settings → Other connections → Apple Watch in the iPhone app.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                if state.deviceStatusIconImage() != nil { MainViewAIDStatusView().privacySensitive() }
+            }.padding(.horizontal, 6)
+        }.accessibilityIdentifier("watch.connection")
     }
-    
-    static var previews: some View {
-        let watchState = WatchStateModel()
-        
-        watchState.bgReadingValues = bgValueArray()
-        watchState.bgReadingDates = bgDateArray()
-        watchState.isMgDl = false
-        watchState.slopeOrdinal = 3
-        watchState.deltaValueInUserUnit = 2
-        watchState.urgentLowLimitInMgDl = 60
-        watchState.lowLimitInMgDl = 80
-        watchState.highLimitInMgDl = 140
-        watchState.urgentHighLimitInMgDl = 180
-        watchState.updatedDate = Date().addingTimeInterval(-120)
-        watchState.activeSensorDescription = "Data Source"
-        watchState.sensorAgeInMinutes = Double(Int.random(in: 1..<14400))
-        watchState.sensorMaxAgeInMinutes = 14400
-        watchState.isMaster = false
-        watchState.followerDataSourceType = .libreLinkUp
-        watchState.followerBackgroundKeepAliveType = .heartbeat
-        watchState.deviceStatusIOB = 2.25
-        watchState.deviceStatusCOB = 24
-        watchState.deviceStatusCreatedAt = Date().addingTimeInterval(-180)
-        watchState.deviceStatusLastLoopDate = Date().addingTimeInterval(-125)
-        
-        return Group {
-            MainView()
-        }.environmentObject(watchState)
+}
+
+private struct WatchHistoryChart: View {
+    let values: [Double]
+    let dates: [Date]
+    let sensorIDs: [String]
+    let isMgDl: Bool
+    let now: Date
+    let fresh: Bool
+    private struct Point: Identifiable {
+        let date: Date
+        let value: Double
+        let segment: Int
+        var id: Date { date }
+    }
+    private var points: [Point] {
+        let samples = Array(zip(dates, values)).enumerated().map { index, sample in
+            (sample.0, sample.1, sensorIDs.indices.contains(index) ? sensorIDs[index] : "")
+        }.filter {
+            $0.0 >= now.addingTimeInterval(-10800) && $0.0 <= now && $0.1.isFinite && $0.1 > 12
+        }.sorted { $0.0 < $1.0 }
+        var segment = 0
+        var previous: Date?
+        var previousSensor: String?
+        return samples.compactMap { date, value, sensor in
+            if previous == date { return nil }
+            if let previous, date.timeIntervalSince(previous) > 600 || previousSensor != sensor { segment += 1 }
+            previous = date
+            previousSensor = sensor
+            return Point(date: date, value: isMgDl ? value : value / 18.0182, segment: segment)
+        }
+    }
+    var body: some View {
+        Chart(points) { point in
+            LineMark(x: .value("Time", point.date), y: .value("Glucose", point.value), series: .value("Segment", point.segment))
+                .interpolationMethod(.linear).lineStyle(StrokeStyle(lineWidth: 2))
+                .foregroundStyle(fresh ? Color.mint : Color.gray)
+        }
+        .chartXScale(domain: now.addingTimeInterval(-10800)...now)
+        .chartYScale(domain: .automatic(includesZero: false))
+        .chartXAxis(.hidden)
+        .chartYAxis { AxisMarks(values: .automatic(desiredCount: 2)) { _ in AxisValueLabel(); AxisGridLine() } }
+        .accessibilityLabel("Glucose history for the last three hours. Gaps indicate missing readings.")
     }
 }

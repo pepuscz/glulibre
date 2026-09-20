@@ -13,7 +13,7 @@ final class SettingsViewMealAnalysisSettingsViewModel: SettingsViewModelProtocol
     func sectionTitle() -> String? { "🍽 Meal Photos & AI" }
 
     func sectionFooter() -> String? {
-        "Photos and comments stay local until Analyze is tapped. The API key is protected by the iPhone Keychain. AI nutrition is always marked as an estimate until you confirm it."
+        "When automatic meal analysis is on in Settings → Meal analysis, new photos and notes are sent to OpenAI using your saved key. Old meals are not uploaded automatically. The key stays in Keychain. Health export requires review."
     }
 
     func numberOfRows() -> Int { MealAnalysisSetting.allCases.count }
@@ -113,7 +113,7 @@ final class SettingsViewMealAnalysisSettingsViewModel: SettingsViewModelProtocol
         guard let viewController = viewController else { return }
         let alert = UIAlertController(
             title: "OpenAI Model",
-            message: "gpt-5-mini is the cost-efficient default. Change this only if your API project uses another vision-capable model.",
+            message: "Enter an OpenAI model ID that supports images and structured outputs through the Responses API. Changes apply to the next analysis.",
             preferredStyle: .alert
         )
         alert.addTextField { field in
@@ -123,7 +123,9 @@ final class SettingsViewMealAnalysisSettingsViewModel: SettingsViewModelProtocol
         }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self] _ in
-            MealAISettings.model = alert.textFields?.first?.text ?? "gpt-5-mini"
+            guard let value = alert.textFields?.first?.text,
+                  !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            MealAISettings.model = value
             self?.rowReloadClosure?(MealAnalysisSetting.model.rawValue)
         })
         viewController.present(alert, animated: true)

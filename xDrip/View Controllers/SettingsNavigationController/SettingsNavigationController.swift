@@ -2,6 +2,8 @@ import UIKit
 
 // defining this class because I want to be able to setup the uiviewcontrollers that are  managed by this uinavigationcontroller
 final class SettingsNavigationController: UINavigationController {
+    /// The journal presents alarms as a direct task; normal legacy navigation keeps Back.
+    var closesAlarmTask = false
     
     // set the status bar content colour to light to match new darker theme
     override var preferredStatusBarStyle: UIStatusBarStyle {
@@ -59,6 +61,12 @@ extension SettingsNavigationController:UINavigationControllerDelegate {
         
         if let settingsViewController = viewController as? SettingsViewController {
             settingsViewController.configure(coreDataManager: coreDataManager, soundPlayer: soundPlayer)
+        }
+        if closesAlarmTask, viewController is AlertsSettingsViewController {
+            viewController.navigationItem.title = "Alarms"
+            viewController.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak navigationController] _ in
+                navigationController?.dismiss(animated: true)
+            })
         }
     }
 }

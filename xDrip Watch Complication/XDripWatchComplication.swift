@@ -19,6 +19,7 @@ struct XDripWatchComplication: Widget {
         }
         .configurationDisplayName(ConstantsHomeView.applicationName)
         .description("Show the current blood glucose level")
+        .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline, .accessoryCorner])
     }
 }
 

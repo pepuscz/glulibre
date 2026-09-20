@@ -20,11 +20,12 @@ final class WatchStateModel: NSObject, ObservableObject {
     
     // set timer to automatically refresh the view
     // https://www.hackingwithswift.com/quick-start/swiftui/how-to-use-a-timer-with-swiftui
-    let timer = Timer.publish(every: 2, tolerance: 0.5, on: .main, in: .common).autoconnect()
+    let timer = Timer.publish(every: 30, tolerance: 3, on: .main, in: .common).autoconnect()
     @Published var timerControlDate = Date()
     
     var bgReadingValues: [Double] = []
     var bgReadingDates: [Date] = []
+    var bgReadingSensorIDs: [String] = []
     var bgReadingDatesAsDouble: [Double] = []
     
     @Published var isMgDl: Bool = true
@@ -56,6 +57,13 @@ final class WatchStateModel: NSObject, ObservableObject {
     @Published var chartHoursIndex: Int = 1
     @Published var requestingDataIconColor: Color = ConstantsAppleWatch.requestingDataIconColorInactive
     @Published var lastComplicationUpdateTimeStamp: Date = .distantPast
+    @Published var lastMeal: WatchMealSnapshot?
+    @Published var syncStatus = "Open the iPhone app to sync."
+    @Published var isRefreshing = false
+    private var lastAcceptedSnapshot: Double = 0
+    private var lastRequest: Date = .distantPast
+    private var requestID = UUID()
+    private let cacheKey = "journal.watch.snapshot.v1"
     
     // use this to track the AID/looping status
     @Published var deviceStatusIOB: Double = 0
@@ -72,12 +80,44 @@ final class WatchStateModel: NSObject, ObservableObject {
     init(session: WCSession = .default) {
         self.session = session
         super.init()
+
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.arguments.contains("--watch-demo") {
+            loadDemo()
+            return
+        }
+        #endif
+        if let data = UserDefaults.standard.data(forKey: cacheKey + ".data"),
+           let cached = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            processWatchStateFromDictionary(dictionary: cached)
+        }
         
         session.delegate = self
         session.activate()
     }
     
     // MARK: - Functions to provide context data to populate the views
+    #if DEBUG && targetEnvironment(simulator)
+    private func loadDemo() {
+        let arguments = ProcessInfo.processInfo.arguments
+        let now = Date()
+        if !arguments.contains("--watch-empty") {
+            let offset: Double = arguments.contains("--watch-stale") ? 1200 : 30
+            bgReadingDates = (0..<36).map { now.addingTimeInterval(-offset - Double($0) * 300) }
+            bgReadingValues = (0..<36).map { 98 + 35 * exp(-pow((Double($0) - 10) / 5, 2)) }
+            bgReadingSensorIDs = Array(repeating: "sample", count: 36)
+            isMgDl = arguments.contains("--watch-mgdl")
+            slopeOrdinal = 4
+            let collecting = arguments.contains("--watch-collecting")
+            let limited = arguments.contains("--watch-limited")
+            lastMeal = WatchMealSnapshot(title: "Avocado toast", eatenAt: now.addingTimeInterval(collecting ? -3600 : -9000).timeIntervalSince1970,
+                state: collecting ? "collecting" : limited ? "limited" : "ready", riseMgDl: collecting || limited ? nil : 35,
+                detail: limited ? "Another logged meal overlaps this window." : "Observed after this meal")
+        }
+        liveDataIsEnabled = true
+        syncStatus = "Simulator sample · not sensor data"
+    }
+    #endif
     
     /// the latest BG reading value in the array as a double
     /// - Returns: an optional double with the bg value in mg/dL if it exists
@@ -390,37 +430,81 @@ final class WatchStateModel: NSObject, ObservableObject {
     
     /// request a state update from the iOS companion app
     func requestWatchStateUpdate() {
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.arguments.contains("--watch-demo") { return }
+        #endif
+        guard Date().timeIntervalSince(lastRequest) >= 5 else { return }
+        lastRequest = Date()
         guard session.activationState == .activated else {
+            syncStatus = "Connecting to iPhone…"
             session.activate()
             return
         }
         // change the text, this must be done in the main thread but only do it if the watch app is reachable
         if session.isReachable {
+            isRefreshing = true
+            syncStatus = "Updating…"
+            let id = UUID()
+            requestID = id
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, self.requestID == id, self.isRefreshing else { return }
+                self.isRefreshing = false
+                self.syncStatus = "Open the iPhone app to sync."
+            }
             DispatchQueue.main.async {
                 self.requestingDataIconColor = ConstantsAppleWatch.requestingDataIconColorPending
                 self.debugString = self.debugString.replacingOccurrences(of: "Idle", with: "Fetching")
             }
             
-            session.sendMessage(["requestWatchUpdate": "watchState"], replyHandler: nil) { error in
-                print("WatchStateModel error: " + error.localizedDescription)
+            session.sendMessage(["requestWatchUpdate": "watchState"], replyHandler: nil) { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self, self.requestID == id, self.isRefreshing else { return }
+                    self.isRefreshing = false
+                    self.syncStatus = "Open the iPhone app to sync."
+                }
             }
+        } else {
+            isRefreshing = false
+            syncStatus = "Open the iPhone app to sync."
         }
     }
     
     // MARK: - Private functions used to interact with the WCSession and prepare internal data
     
     private func processWatchStateFromDictionary(dictionary: [String: Any]) {
-        let bgReadingDatesFromDictionary: [Double] = dictionary["bgReadingDatesAsDouble"] as? [Double] ?? [0]
+        guard let values = dictionary["bgReadingValues"] as? [Double],
+              let dates = dictionary["bgReadingDatesAsDouble"] as? [Double],
+              values.count == dates.count,
+              values.allSatisfy({ $0.isFinite }), dates.allSatisfy({ $0.isFinite }),
+              WatchGlancePolicy.accepts(generatedAt: dictionary["generatedAt"] as? Double,
+                  lastAccepted: lastAcceptedSnapshot, readingDate: dates.first,
+                  currentReadingDate: bgReadingDates.first?.timeIntervalSince1970) else { return }
+        let sensorIDs = dictionary["bgReadingSensorIDs"] as? [String] ?? []
+        let pairs = values.indices.map { (values[$0], dates[$0], sensorIDs.indices.contains($0) ? sensorIDs[$0] : "") }
+            .filter { $0.0 > 12 && $0.1 <= Date().timeIntervalSince1970 }.sorted { $0.1 > $1.1 }
+        let bgReadingDatesFromDictionary = pairs.map { $0.1 }
         
         // let's make a quick check to see if the data about to be processed is from within the last hour
         // this is to avoid long delays when re-opening a Watch app for the first time in days and waiting
         // whilst the whole queue of userInfo messages are processed
-        if let lastBgReadingDateFromDictionaryReceived = bgReadingDatesFromDictionary.first, Date(timeIntervalSince1970: lastBgReadingDateFromDictionaryReceived) > Date(timeIntervalSinceNow: -60 * 60 * 1) {
+        do {
             bgReadingDates = bgReadingDatesFromDictionary.map { bgReadingDateAsDouble -> Date in
                 return Date(timeIntervalSince1970: bgReadingDateAsDouble)
             }
             
-            bgReadingValues = dictionary["bgReadingValues"] as? [Double] ?? [100]
+            bgReadingValues = pairs.map { $0.0 }
+            bgReadingSensorIDs = pairs.map { $0.2 }
+            lastAcceptedSnapshot = dictionary["generatedAt"] as? Double ?? lastAcceptedSnapshot
+            if let meal = dictionary["lastMeal"], JSONSerialization.isValidJSONObject(meal),
+               let data = try? JSONSerialization.data(withJSONObject: meal) {
+                lastMeal = try? JSONDecoder().decode(WatchMealSnapshot.self, from: data)
+            } else { lastMeal = nil }
+            isRefreshing = false
+            syncStatus = "Synced with iPhone"
+            // JSON nulls are not property-list values; cache JSON as Data.
+            if JSONSerialization.isValidJSONObject(dictionary), let data = try? JSONSerialization.data(withJSONObject: dictionary) {
+                UserDefaults.standard.set(data, forKey: cacheKey + ".data")
+            }
             
             isMgDl = dictionary["isMgDl"] as? Bool ?? true
             slopeOrdinal = dictionary["slopeOrdinal"] as? Int ?? 0
@@ -538,16 +622,29 @@ final class WatchStateModel: NSObject, ObservableObject {
 extension WatchStateModel: WCSessionDelegate {
     func session(_: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error _: Error?) {
         if activationState == .activated {
-            requestWatchStateUpdate()
+            DispatchQueue.main.async {
+                if let state = self.session.receivedApplicationContext["watchState"] as? [String: Any] {
+                    self.processWatchStateFromDictionary(dictionary: state)
+                }
+                self.lastRequest = .distantPast
+                self.requestWatchStateUpdate()
+            }
         }
     }
     
-    func sessionReachabilityDidChange(_: WCSession) {}
+    func sessionReachabilityDidChange(_: WCSession) {
+        DispatchQueue.main.async { self.requestWatchStateUpdate() }
+    }
+
+    func session(_: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        guard let state = applicationContext["watchState"] as? [String: Any] else { return }
+        DispatchQueue.main.async { self.processWatchStateFromDictionary(dictionary: state) }
+    }
     
     func session(_: WCSession, didReceiveMessageData _: Data) {}
     
     func session(_: WCSession, didReceiveMessage message: [String: Any]) {
-        let watchStateAsDictionary = message["watchState"] as! [String: Any]
+        guard let watchStateAsDictionary = message["watchState"] as? [String: Any] else { return }
         
         DispatchQueue.main.async {
             self.processWatchStateFromDictionary(dictionary: watchStateAsDictionary)
@@ -562,7 +659,7 @@ extension WatchStateModel: WCSessionDelegate {
     }
     
     func session(_: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-        let watchStateAsDictionary = userInfo["watchState"] as! [String: Any]
+        guard let watchStateAsDictionary = userInfo["watchState"] as? [String: Any] else { return }
         DispatchQueue.main.async {
             self.processWatchStateFromDictionary(dictionary: watchStateAsDictionary)
         }

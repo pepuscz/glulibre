@@ -83,7 +83,10 @@ final class MealHealthKitWriter {
             throw MealHealthKitError.unavailable
         }
 
-        let share: Set<HKSampleType> = [food, carbohydrates, protein, fat, fiber, sugar, energy]
+        // Correlations are containers, not permission types. Including `food` here
+        // raises an Objective-C exception (not a catchable Swift error).
+        // Authorize their constituent nutrients instead, per HKCorrelationQuery.
+        let share: Set<HKSampleType> = [carbohydrates, protein, fat, fiber, sugar, energy]
         let read: Set<HKObjectType> = Set(share.map { $0 as HKObjectType })
         return MealHealthTypes(
             food: food,
@@ -99,6 +102,10 @@ final class MealHealthKitWriter {
     }
 
     private func requestAuthorization(share: Set<HKSampleType>, read: Set<HKObjectType>) async throws {
+        guard !share.contains(where: { $0 is HKCorrelationType }),
+              !read.contains(where: { $0 is HKCorrelationType }) else {
+            throw MealHealthKitError.invalidAuthorizationTypes
+        }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             healthStore.requestAuthorization(toShare: share, read: read) { success, error in
                 if let error = error {
@@ -173,6 +180,7 @@ enum MealHealthKitError: LocalizedError {
     case noNutrition
     case saveFailed
     case deleteFailed
+    case invalidAuthorizationTypes
 
     var errorDescription: String? {
         switch self {
@@ -181,6 +189,22 @@ enum MealHealthKitError: LocalizedError {
         case .noNutrition: return "There are no nutrition values to save to Apple Health."
         case .saveFailed: return "Apple Health could not save this meal."
         case .deleteFailed: return "Apple Health could not replace the previous version of this meal."
+        case .invalidAuthorizationTypes: return "Apple Health export could not be started. The meal is still saved locally."
         }
     }
 }
+
+#if targetEnvironment(simulator) && DEBUG
+extension MealHealthKitWriter {
+    static func runAuthorizationTypeChecks() {
+        do {
+            let types = try shared.healthTypes()
+            precondition(types.share.count == 6 && types.read.count == 6)
+            precondition(types.share.allSatisfy { $0 is HKQuantityType })
+            precondition(types.read.allSatisfy { $0 is HKQuantityType })
+            precondition(!types.share.contains(types.food) && !types.read.contains(types.food))
+            NSLog("MEAL_HEALTH_AUTH_CHECKS PASS six nutrient types, no correlation permission requests")
+        } catch { preconditionFailure("Meal Health authorization regression: \(error)") }
+    }
+}
+#endif

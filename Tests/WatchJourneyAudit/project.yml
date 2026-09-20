@@ -1,0 +1,26 @@
+name: LibreWatchJourneyAudit
+options:
+  deploymentTarget:
+    watchOS: "10.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  WatchJourneyAudit:
+    type: bundle.ui-testing
+    platform: watchOS
+    sources:
+      - Journeys
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.libredebug.WatchJourneyAudit
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  WatchJourneyAudit:
+    build:
+      targets:
+        WatchJourneyAudit: [test]
+    test:
+      targets:
+        - WatchJourneyAudit

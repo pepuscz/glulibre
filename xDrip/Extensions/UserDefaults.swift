@@ -764,22 +764,21 @@ extension UserDefaults {
     
     /// should notification be shown with reading yes or no
     @objc dynamic var showReadingInNotification: Bool {
-        // default value for bool in userdefaults is false, as default we want readings to be shown
         get {
-            return !bool(forKey: Key.showReadingInNotification.rawValue)
+            return ReadingNotificationPolicy.isEnabled(in: self)
         }
         set {
             set(!newValue, forKey: Key.showReadingInNotification.rawValue)
         }
     }
     
-    /// speak readings interval in minutes
+    /// Optional routine notification interval; safety alarms have separate schedules.
     @objc dynamic var notificationInterval: Int {
         get {
-            return integer(forKey: Key.notificationInterval.rawValue)
+            return ReadingNotificationPolicy.intervalMinutes(in: self)
         }
         set {
-            set(newValue, forKey: Key.notificationInterval.rawValue)
+            set(max(ReadingNotificationPolicy.minimumIntervalMinutes, newValue), forKey: Key.notificationInterval.rawValue)
         }
     }
 
@@ -2728,4 +2727,3 @@ extension UserDefaults {
         }
     }
 }
-

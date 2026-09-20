@@ -473,6 +473,7 @@ final class RootViewController: UIViewController, ObservableObject {
     
     /// CoreDataManager to be used throughout the project
     private var coreDataManager: CoreDataManager?
+    private var journalExperience: JournalExperienceCoordinator?
     
     /// to solve problem that sometemes UserDefaults key value changes is triggered twice for just one change
     private let keyValueObserverTimeKeeper: KeyValueObserverTimeKeeper = KeyValueObserverTimeKeeper()
@@ -588,8 +589,8 @@ final class RootViewController: UIViewController, ObservableObject {
     /// in fact it will never be used with a nil value, except when connecting to a cgm transmitter for the first time
     private var nonFixedSlopeEnabled: Bool?
     
-    /// when was the last notification created with bgreading, setting to 1 1 1970 initially to avoid having to unwrap it
-    private var timeStampLastBGNotification = Date(timeIntervalSince1970: 0)
+    /// Prevent overlapping routine requests while Notification Center accepts one.
+    private var readingNotificationInFlight = false
     
     /// to hold the current state of the screen keep-alive
     private var screenIsLocked: Bool = false
@@ -622,7 +623,7 @@ final class RootViewController: UIViewController, ObservableObject {
     
     // set the status bar content colour to light to match new darker theme
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        return .lightContent
+        return overrideUserInterfaceStyle == .dark ? .lightContent : .default
     }
     
     override func didReceiveMemoryWarning() {
@@ -665,6 +666,8 @@ final class RootViewController: UIViewController, ObservableObject {
     }
     
     override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        journalExperience?.didAppear()
         
         // remove titles from tabbar items
         self.tabBarController?.cleanTitles()
@@ -700,6 +703,9 @@ final class RootViewController: UIViewController, ObservableObject {
     
     override func viewDidLoad() {
         super.viewDidLoad()
+
+        // Clear only old routine updates when the quiet default applies, even with no new reading.
+        if !UserDefaults.standard.showReadingInNotification { clearRoutineReadingNotifications() }
         
         // Run a quick check to see if the currently stored followerDataSourceType is now on the ignore list
         // if so, then reset back to Nightscout. This is unlikely to ever happen, but it *is* possible.
@@ -846,7 +852,7 @@ final class RootViewController: UIViewController, ObservableObject {
             self.createBgReadingNotificationAndSetAppBadge(overrideShowReadingInNotification: true)
             
             // if licenseinfo not yet accepted, show license info with only ok button
-            if !UserDefaults.standard.licenseInfoAccepted {
+            if !UserDefaults.standard.licenseInfoAccepted && !JournalModel.isSimulatorUITest {
                 
                 let alert = UIAlertController(title: ConstantsHomeView.applicationName, message: Texts_HomeView.licenseInfo + ConstantsHomeView.infoEmailAddress, actionHandler: {
                     
@@ -868,11 +874,16 @@ final class RootViewController: UIViewController, ObservableObject {
             self.setNightscoutSyncRequiredToTrue(forceNow: true)
             
             self.updateLiveActivityAndWidgets(forceRestart: false)
+
+            if self.view.window != nil { self.journalExperience?.didAppear() }
             
         })
         
         // Setup View
         setupView()
+
+        journalExperience = JournalExperienceCoordinator(root: self)
+        journalExperience?.install()
         
         // observe setting changes
         // changing from follower to master or vice versa
@@ -955,6 +966,7 @@ final class RootViewController: UIViewController, ObservableObject {
         
         // check if app is allowed to send local notification and if not ask it
         UNUserNotificationCenter.current().getNotificationSettings { (notificationSettings) in
+            guard !JournalModel.isSimulatorUITest else { return }
             switch notificationSettings.authorizationStatus {
             case .notDetermined, .denied:
                 UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { (success, error) in
@@ -1132,6 +1144,7 @@ final class RootViewController: UIViewController, ObservableObject {
         
         // instantiate bgReadingsAccessor
         bgReadingsAccessor = BgReadingsAccessor(coreDataManager: coreDataManager)
+        if let bgReadingsAccessor { JournalModel.shared.bind(to: bgReadingsAccessor, context: coreDataManager.mainManagedObjectContext) }
         guard let bgReadingsAccessor = bgReadingsAccessor else {
             fatalError("in setupApplicationData, failed to initialize bgReadings")
         }
@@ -1644,8 +1657,7 @@ final class RootViewController: UIViewController, ObservableObject {
             
         case UserDefaults.Key.showReadingInNotification:
             if !UserDefaults.standard.showReadingInNotification {
-                // remove existing notification if any
-                UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [ConstantsNotifications.NotificationIdentifierForBgReading.bgReadingNotificationRequest])
+                clearRoutineReadingNotifications()
             }
             
         case UserDefaults.Key.multipleAppBadgeValueWith10, UserDefaults.Key.showReadingInAppBadge, UserDefaults.Key.bloodGlucoseUnitIsMgDl, UserDefaults.Key.followerBackgroundKeepAliveType:
@@ -1744,6 +1756,9 @@ final class RootViewController: UIViewController, ObservableObject {
         to newCollection: UITraitCollection,
         with coordinator: UIViewControllerTransitionCoordinator) {
             super.willTransition(to: newCollection, with: coordinator)
+            // The journal owns presentation in every orientation. Keep this controller
+            // for its existing services, but never cover the host with the old dashboard.
+            guard journalExperience == nil else { return }
             
             switch newCollection.verticalSizeClass {
             case .compact:
@@ -2093,6 +2108,13 @@ final class RootViewController: UIViewController, ObservableObject {
         })
     }
     
+    private func clearRoutineReadingNotifications() {
+        let identifiers = [ConstantsNotifications.NotificationIdentifierForBgReading.bgReadingNotificationRequest]
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        center.removeDeliveredNotifications(withIdentifiers: identifiers)
+    }
+
     /// creates bgreading notification, and set app badge to value of reading
     /// - parameters:
     ///     - if overrideShowReadingInNotification then badge counter will be set (if enabled off course) with function UIApplication.shared.applicationIconBadgeNumber. To be used if badge counter is  to be set eg when UserDefaults.standard.showReadingInAppBadge is changed
@@ -2140,11 +2162,16 @@ final class RootViewController: UIViewController, ObservableObject {
         // low limit to 40
         if readingValueForBadge <= 40.0 { readingValueForBadge = 40.0 }
         
-        // check if notification on home screen is enabled in the settings
-        // and also if last notification was long enough ago (longer than UserDefaults.standard.notificationInterval), except if there would have been a disconnect since previous notification (simply because I like getting a new reading with a notification by disabling/reenabling bluetooth
-        if UserDefaults.standard.showReadingInNotification && !overrideShowReadingInNotification && (abs(timeStampLastBGNotification.timeIntervalSince(Date())) > Double(UserDefaults.standard.notificationInterval) * 60.0) {
+        // Optional quiet updates are independent of safety alarms. Persisted cadence and
+        // reading identity prevent duplicate updates after reconnects or app restarts.
+        if !overrideShowReadingInNotification && !readingNotificationInFlight &&
+            ReadingNotificationPolicy.shouldSend(in: .standard,
+                isBackground: UIApplication.shared.applicationState == .background,
+                readingAt: lastReading[0].timeStamp) {
             // Create Notification Content
             let notificationContent = UNMutableNotificationContent()
+            notificationContent.interruptionLevel = .passive
+            notificationContent.threadIdentifier = "routine-glucose"
             
             // set value in badge if required and also only if master, or when background keep alive is enabled for followers
             if UserDefaults.standard.showReadingInAppBadge && (UserDefaults.standard.isMaster || (!UserDefaults.standard.isMaster &&  UserDefaults.standard.followerBackgroundKeepAliveType != .disabled)) {
@@ -2180,15 +2207,21 @@ final class RootViewController: UIViewController, ObservableObject {
             // Create Notification Request
             let notificationRequest = UNNotificationRequest(identifier: ConstantsNotifications.NotificationIdentifierForBgReading.bgReadingNotificationRequest, content: notificationContent, trigger: nil)
             
+            let readingAt = lastReading[0].timeStamp
+            readingNotificationInFlight = true
             // Add Request to User Notification Center
             UNUserNotificationCenter.current().add(notificationRequest) { (error) in
-                if let error = error {
-                    trace("Unable to Add bg reading Notification Request %{public}@", log: self.log, category: ConstantsLog.categoryRootView, type: .error, error.localizedDescription)
+                DispatchQueue.main.async {
+                    self.readingNotificationInFlight = false
+                    if let error = error {
+                        trace("Unable to Add bg reading Notification Request %{public}@", log: self.log, category: ConstantsLog.categoryRootView, type: .error, error.localizedDescription)
+                    } else {
+                        ReadingNotificationPolicy.recordSent(in: .standard, readingAt: readingAt)
+                    }
+                    // Handle switching updates off while the async request was in flight.
+                    if !UserDefaults.standard.showReadingInNotification { self.clearRoutineReadingNotifications() }
                 }
             }
-            
-            // set timeStampLastBGNotification to now
-            timeStampLastBGNotification = Date()
             
         } else {
             // notification shouldn't be shown, but maybe the badge counter. Here the badge value needs to be shown in another way and also only if master, or when background keep alive is enabled for followers
@@ -3220,7 +3253,7 @@ final class RootViewController: UIViewController, ObservableObject {
     
     
     func showChartLandscape(with coordinator: UIViewControllerTransitionCoordinator) {
-        guard landscapeChartViewController == nil else { return }
+        guard journalExperience == nil, landscapeChartViewController == nil else { return }
         
         landscapeChartViewController = storyboard!.instantiateViewController(
             withIdentifier: "LandscapeChartViewController")
@@ -3241,7 +3274,7 @@ final class RootViewController: UIViewController, ObservableObject {
     }
     
     func showValueLandscape(with coordinator: UIViewControllerTransitionCoordinator) {
-        guard landscapeValueViewController == nil else { return }
+        guard journalExperience == nil, landscapeValueViewController == nil else { return }
         
         landscapeValueViewController = storyboard!.instantiateViewController(
             withIdentifier: "LandscapeValueViewController")
@@ -3777,6 +3810,70 @@ extension RootViewController: CGMTransmitterDelegate {
 
 /// conform to UITabBarControllerDelegate, want to receive info when user clicks specific tabs
 extension RootViewController: UITabBarControllerDelegate {
+    @MainActor func configureJournalManagement(_ management: JournalManagement) {
+        management.contextProvider = { [weak self] in self?.coreDataManager?.mainManagedObjectContext }
+        management.persistChanges = { [weak self] in self?.coreDataManager?.saveChanges() }
+        management.managerProvider = { [weak self] in self?.bluetoothPeripheralManager }
+        management.settingsProvider = { [weak self] service in
+            switch service {
+            case .nightscout: return SettingsViewNightscoutSettingsViewModel()
+            case .dexcom: return SettingsViewDexcomShareUploadSettingsViewModel()
+            case .watch: return SettingsViewAppleWatchSettingsViewModel()
+            case .speech: return SettingsViewSpeakSettingsViewModel()
+            case .calendar: return SettingsViewCalendarEventsSettingsViewModel()
+            case .contact: return SettingsViewContactImageSettingsViewModel()
+            case .source: return SettingsViewDataSourceSettingsViewModel(coreDataManager: self?.coreDataManager)
+            case .data: return SettingsViewHousekeeperSettingsViewModel(coreDataManager: self?.coreDataManager)
+            }
+        }
+    }
+    /// Read-only presentation snapshot; never creates, pairs, or restarts a transmitter.
+    /// Read-only summaries of currently applicable schedules; never creates or changes alarms.
+    func journalAlarmSummaries() -> [JournalAlarmSummary] {
+        guard let context = coreDataManager?.mainManagedObjectContext else { return [] }
+        let request: NSFetchRequest<AlertEntry> = AlertEntry.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(key: "start", ascending: true)]
+        guard let entries = try? context.fetch(request) else { return [] }
+        let minutes = Int16(Date().minutesSinceMidNightLocalTime())
+        let model = JournalModel.shared
+        let kinds: [(AlertKind, String)] = [(.verylow, "Very low"), (.low, "Low glucose"), (.high, "High glucose"), (.veryhigh, "Very high"), (.missedreading, "No readings")]
+        return kinds.map { kind, title in
+            guard let entry = entries.last(where: { $0.alertkind == kind.rawValue && $0.start <= minutes }) else {
+                return JournalAlarmSummary(id: kind.rawValue, title: title, value: "Unavailable")
+            }
+            let value: String
+            if entry.isDisabled || !entry.alertType.enabled { value = "Off" }
+            else if kind == .missedreading { value = "\(entry.value) min" }
+            else { value = "\(model.formatted(Double(entry.value))) \(model.unit)" }
+            return JournalAlarmSummary(id: kind.rawValue, title: title, value: value)
+        }
+    }
+
+    func journalSensorSnapshot() -> JournalSensorSnapshot {
+        var snapshot = JournalSensorSnapshot()
+        snapshot.startedAt = activeSensor?.startDate
+        snapshot.name = UserDefaults.standard.activeSensorDescription ?? "No sensor selected"
+        guard let manager = bluetoothPeripheralManager,
+              let peripheral = manager.getBluetoothPeripherals().first(where: {
+                  $0.blePeripheral.address == manager.currentCgmTransmitterAddress
+              }) ?? manager.getBluetoothPeripherals().first(where: {
+                  $0.bluetoothPeripheralType().category() == .CGM && $0.blePeripheral.shouldconnect
+              }) else { return snapshot }
+        snapshot.hasDevice = true
+        snapshot.name = peripheral.bluetoothPeripheralType().rawValue
+        snapshot.deviceName = peripheral.blePeripheral.alias ?? peripheral.blePeripheral.name
+        snapshot.connectionEnabled = peripheral.blePeripheral.shouldconnect
+        switch manager.getBluetoothTransmitter(for: peripheral, createANewOneIfNecesssary: false)?.getConnectionStatus() {
+        case .connected: snapshot.link = "Connected"
+        case .connecting: snapshot.link = "Connecting"
+        case .disconnecting: snapshot.link = "Disconnecting"
+        case .disconnected: snapshot.link = snapshot.connectionEnabled ? "Waiting to reconnect" : "Disconnected"
+        case nil: snapshot.link = snapshot.connectionEnabled ? "Waiting for connection" : "Connection disabled"
+        @unknown default: snapshot.link = "Status unavailable"
+        }
+        return snapshot
+    }
+
     func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
         // check which tab is being clicked
         if let navigationController = viewController as? SettingsNavigationController, let coreDataManager = coreDataManager, let soundPlayer = soundPlayer {
@@ -3820,13 +3917,16 @@ extension RootViewController: UNUserNotificationCenterDelegate {
             completionHandler([.banner, .list, .sound])
             // this will verify if it concerns an alert notification, if not pickerviewData will be nil
         } else if let pickerViewData = alertManager?.userNotificationCenter(center, willPresent: notification, withCompletionHandler: completionHandler) {
-            PickerViewControllerModal.displayPickerViewController(pickerViewData: pickerViewData, parentController: self)
+            showJournalAlarmResponse(pickerViewData)
         }  else if notification.request.identifier == ConstantsNotifications.notificationIdentifierForVolumeTest {
             // user is testing iOS Sound volume in the settings. Only the sound should be played, the alert itself will not be shown
             completionHandler([.sound, .list])
         } else if notification.request.identifier == ConstantsNotifications.notificationIdentifierForxCGMTransmitterDelegatexDripError {
             // call completionhandler to show the notification even though the app is in the foreground, without sound
             completionHandler([.banner, .list])
+        } else {
+            // Routine updates never interrupt the foreground. Always finish the delegate callback.
+            completionHandler([])
         }
     }
     
@@ -3848,15 +3948,22 @@ extension RootViewController: UNUserNotificationCenterDelegate {
             self.present(alert, animated: true, completion: nil)
         } else if response.notification.request.identifier == ConstantsNotifications.NotificationIdentifierForTransmitterNeedsPairing.transmitterNeedsPairing {
             // nothing required, the pairing function will be called as it's been added to ApplicationManager in function cgmTransmitterNeedsPairing
+        } else if response.notification.request.identifier.hasPrefix(LibreNFC.diagnosticWarmupNotificationIdentifierPrefix) {
+            journalExperience?.showSensorSetup()
         } else {
             // it's not an initial calibration request notification that the user clicked, by calling alertManager?.userNotificationCenter, we check if it was an alert notification that was clicked and if yes pickerViewData will have the list of alert snooze values
             if let pickerViewData = alertManager?.userNotificationCenter(center, didReceive: response) {
                 trace("in userNotificationCenter didReceive, user pressed an alert notification to open the app", log: log, category: ConstantsLog.categoryRootView, type: .info)
-                PickerViewControllerModal.displayPickerViewController(pickerViewData: pickerViewData, parentController: self)
+                showJournalAlarmResponse(pickerViewData)
             } else {
                 // it as also not an alert notification that the user clicked, there might come in other types of notifications in the future
             }
         }
+    }
+
+    private func showJournalAlarmResponse(_ data: PickerViewData) {
+        if let journalExperience { journalExperience.showAlarmResponse(data) }
+        else { PickerViewControllerModal.displayPickerViewController(pickerViewData: data, parentController: self) }
     }
 }
 

@@ -159,17 +159,17 @@ class LibreNFC: NSObject, NFCTagReaderSessionDelegate {
         let identifier = diagnosticWarmupNotificationIdentifierPrefix + sensorUID.toHexString()
 
         let schedule = {
+            // Permission may have taken time; never restart the countdown from its old delay.
+            let remaining = readyAt.timeIntervalSinceNow
+            guard remaining > 0 else { return }
             let content = UNMutableNotificationContent()
-            content.title = "Libre sensor is ready"
-            content.body = "Open Libre Debug and tap Complete BLE handoff."
+            content.title = "Sensor warm-up finished"
+            content.body = "Open Libre Debug to check your sensor and finish setup if needed."
             content.sound = .default
-            if #available(iOS 15.0, *) {
-                content.interruptionLevel = .timeSensitive
-            }
 
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, delay), repeats: false)
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, remaining), repeats: false)
             let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
-            center.removePendingNotificationRequests(withIdentifiers: [identifier])
+            // The same sensor identifier replaces its pending request; never queue a second timer.
             center.add(request) { error in
                 let log = OSLog(subsystem: ConstantsLog.subSystem, category: ConstantsLog.categoryLibreNFC)
                 if let error {

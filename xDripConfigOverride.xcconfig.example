@@ -1,0 +1,5 @@
+// Copy to xDripConfigOverride.xcconfig and use your own signing identity.
+// For upgrades, preserve the exact team/bundle IDs from the existing install.
+XDRIP_DEVELOPMENT_TEAM = YOUR_TEAM_ID
+MAIN_APP_DISPLAY_NAME = Libre Debug
+MAIN_APP_BUNDLE_IDENTIFIER = com.example.libredebug

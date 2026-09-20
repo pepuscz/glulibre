@@ -7,6 +7,28 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        C0D3B2502026092000000001 /* Legal in Resources */ = {isa = PBXBuildFile; fileRef = C0D3A2502026092000000001 /* Legal */; };
+        C0D3B2192026091900000019 = {isa = PBXBuildFile; fileRef = 47DE41AC2B863D370041DA19; };
+        C0D3B2132026091900000013 = {isa = PBXBuildFile; fileRef = C0D3A2132026091900000013; };
+        C0D3B2142026091900000014 = {isa = PBXBuildFile; fileRef = C0D3A2142026091900000014; };
+        C0D3B2152026091900000015 = {isa = PBXBuildFile; fileRef = C0D3A2152026091900000015; };
+        C0D3B2162026091900000016 = {isa = PBXBuildFile; fileRef = C0D3A2162026091900000016; };
+        C0D3B2172026091900000017 = {isa = PBXBuildFile; fileRef = C0D3A2172026091900000017; };
+        C0D3B2182026091900000018 = {isa = PBXBuildFile; fileRef = C0D3A2182026091900000018; };
+        C0D3B2112026091900000011 = {isa = PBXBuildFile; fileRef = C0D3A2112026091900000011; };
+        C0D3B2122026091900000012 = {isa = PBXBuildFile; fileRef = C0D3A2122026091900000012; };
+        C0D3B2102026091900000010 = {isa = PBXBuildFile; fileRef = C0D3A2102026091900000010; };
+        C0D3B1062026091900000006 = {isa = PBXBuildFile; fileRef = C0D3A1062026091900000006; };
+        C0D3B1072026091900000007 = {isa = PBXBuildFile; fileRef = C0D3A1072026091900000007; };
+        C0D3B2092026091900000009 = {isa = PBXBuildFile; fileRef = C0D3A2092026091900000009; };
+        C0D3B2052026091900000005 = {isa = PBXBuildFile; fileRef = C0D3A2052026091900000005; };
+        C0D3B2062026091900000006 = {isa = PBXBuildFile; fileRef = C0D3A2062026091900000006; };
+        C0D3B2072026091900000007 = {isa = PBXBuildFile; fileRef = C0D3A2072026091900000007; };
+        C0D3B2082026091900000008 = {isa = PBXBuildFile; fileRef = C0D3A2082026091900000008; };
+		C0D3B2012026091900000001 /* GlucoseObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3A2012026091900000001; };
+		C0D3B2022026091900000002 /* JournalModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3A2022026091900000002; };
+		C0D3B2032026091900000003 /* JournalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3A2032026091900000003; };
+		C0D3B2042026091900000004 /* JournalExperienceCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3A2042026091900000004; };
 		C0D3B1012026082400000001 /* MealModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3A1012026082400000001 /* MealModels.swift */; };
 		C0D3B1022026082400000002 /* MealAIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3A1022026082400000002 /* MealAIClient.swift */; };
 		C0D3B1032026082400000003 /* MealHealthKitWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3A1032026082400000003 /* MealHealthKitWriter.swift */; };
@@ -798,6 +820,27 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        C0D3A2502026092000000001 /* Legal */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Legal; sourceTree = "<group>"; };
+        C0D3A2132026091900000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealPhotoTime.swift; sourceTree = "<group>"; };
+        C0D3A2142026091900000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealEditView.swift; sourceTree = "<group>"; };
+        C0D3A2152026091900000015 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalManagement.swift; sourceTree = "<group>"; };
+        C0D3A2162026091900000016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalManagementViews.swift; sourceTree = "<group>"; };
+        C0D3A2172026091900000017 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalNutritionView.swift; sourceTree = "<group>"; };
+        C0D3A2182026091900000018 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalServiceView.swift; sourceTree = "<group>"; };
+        C0D3A2112026091900000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodResponseCore.swift; sourceTree = "<group>"; };
+        C0D3A2122026091900000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodLibraryViews.swift; sourceTree = "<group>"; };
+        C0D3A2102026091900000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseReference.swift; sourceTree = "<group>"; };
+        C0D3A1062026091900000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealAnalysisService.swift; sourceTree = "<group>"; };
+        C0D3A1072026091900000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickMealCaptureViewController.swift; sourceTree = "<group>"; };
+        C0D3A2092026091900000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingNotificationPolicy.swift; sourceTree = "<group>"; };
+        C0D3A2052026091900000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalPreferences.swift; sourceTree = "<group>"; };
+        C0D3A2062026091900000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalSettingsViews.swift; sourceTree = "<group>"; };
+        C0D3A2072026091900000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalHealthContext.swift; sourceTree = "<group>"; };
+        C0D3A2082026091900000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalInsightsView.swift; sourceTree = "<group>"; };
+		C0D3A2012026091900000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseObservations.swift; sourceTree = "<group>"; };
+		C0D3A2022026091900000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalModel.swift; sourceTree = "<group>"; };
+		C0D3A2032026091900000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalViews.swift; sourceTree = "<group>"; };
+		C0D3A2042026091900000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalExperienceCoordinator.swift; sourceTree = "<group>"; };
 		C0D3A1012026082400000001 /* MealModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealModels.swift; sourceTree = "<group>"; };
 		C0D3A1022026082400000002 /* MealAIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealAIClient.swift; sourceTree = "<group>"; };
 		C0D3A1032026082400000003 /* MealHealthKitWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealHealthKitWriter.swift; sourceTree = "<group>"; };
@@ -1851,10 +1894,18 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		C0D3A2002026091900000000 /* Experience */ = {
+			isa = PBXGroup;
+			children = (C0D3A2012026091900000001, C0D3A2022026091900000002, C0D3A2032026091900000003, C0D3A2042026091900000004, C0D3A2052026091900000005, C0D3A2062026091900000006, C0D3A2072026091900000007, C0D3A2082026091900000008, C0D3A2092026091900000009, C0D3A2102026091900000010, C0D3A2112026091900000011, C0D3A2122026091900000012, C0D3A2132026091900000013, C0D3A2142026091900000014, C0D3A2152026091900000015, C0D3A2162026091900000016, C0D3A2172026091900000017, C0D3A2182026091900000018);
+			path = Experience;
+			sourceTree = "<group>";
+		};
 		C0D3A1002026082400000000 /* Meals */ = {
 			isa = PBXGroup;
 			children = (
 				C0D3A1012026082400000001 /* MealModels.swift */,
+                C0D3A1062026091900000006,
+                C0D3A1072026091900000007,
 				C0D3A1022026082400000002 /* MealAIClient.swift */,
 				C0D3A1032026082400000003 /* MealHealthKitWriter.swift */,
 				C0D3A1042026082400000004 /* MealViewControllers.swift */,
@@ -2269,6 +2320,7 @@
 		F8025E5A21F7AFA100ECF0C0 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+                C0D3A2502026092000000001 /* Legal */,
 				F8AC426621ADEBD70078C348 /* Assets.xcassets */,
 				F8B3A7B7226CC0B7004BA588 /* sounds */,
 			);
@@ -2675,6 +2727,7 @@
 				F8025C0B21D9513400ECF0C0 /* Extensions */,
 				F85DC2F621D25E3A00B9F74A /* Managers */,
 				C0D3A1002026082400000000 /* Meals */,
+				C0D3A2002026091900000000 /* Experience */,
 				F8025E5A21F7AFA100ECF0C0 /* Resources */,
 				F85DC2F921D2CCC000B9F74A /* Storyboards */,
 				F8025E5B21F7AFC600ECF0C0 /* Supporting Files */,
@@ -3804,6 +3857,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                C0D3B2502026092000000001 /* Legal in Resources */,
 				F82437AF24CB7A9900BED341 /* Siri_Alert_Urgent_High_Glucose.caf in Resources */,
 				F82437CA24CB7A9900BED341 /* Marimba_Flutter_or_Shake.caf in Resources */,
 				F824377724CB7A9800BED341 /* Siri_Urgent_Low_Glucose.caf in Resources */,
@@ -4035,6 +4089,7 @@
 				478A92552B8FA1D80084C394 /* ConstantsBGGraphBuilder.swift in Sources */,
 				4713B0142BBAB12D009F2838 /* ConstantsAppleWatch.swift in Sources */,
 				478A925F2B8FB5290084C394 /* XDripWatchComplication+Entry.swift in Sources */,
+                C0D3B2192026091900000019 /* WatchState.swift in Sources */,
 				478A925A2B8FA27D0084C394 /* TextsCommon.swift in Sources */,
 				4746068C2B96380200AC9214 /* ConstantsLibreLinkUp.swift in Sources */,
 				478A925D2B8FA6D30084C394 /* ConstantsUI.swift in Sources */,
@@ -4116,6 +4171,26 @@
 			buildActionMask = 2147483647;
 			files = (
 				C0D3B1012026082400000001 /* MealModels.swift in Sources */,
+                C0D3B2102026091900000010,
+                C0D3B1062026091900000006,
+                C0D3B1072026091900000007,
+				C0D3B2012026091900000001 /* GlucoseObservations.swift in Sources */,
+                C0D3B2112026091900000011,
+                C0D3B2132026091900000013,
+                C0D3B2142026091900000014,
+                C0D3B2152026091900000015,
+                C0D3B2162026091900000016,
+                C0D3B2172026091900000017,
+                C0D3B2182026091900000018,
+                C0D3B2122026091900000012,
+				C0D3B2022026091900000002 /* JournalModel.swift in Sources */,
+				C0D3B2032026091900000003 /* JournalViews.swift in Sources */,
+				C0D3B2042026091900000004 /* JournalExperienceCoordinator.swift in Sources */,
+                C0D3B2092026091900000009,
+                C0D3B2052026091900000005,
+                C0D3B2062026091900000006,
+                C0D3B2072026091900000007,
+                C0D3B2082026091900000008,
 				C0D3B1022026082400000002 /* MealAIClient.swift in Sources */,
 				C0D3B1032026082400000003 /* MealHealthKitWriter.swift in Sources */,
 				C0D3B1042026082400000004 /* MealViewControllers.swift in Sources */,

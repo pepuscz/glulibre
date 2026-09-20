@@ -75,7 +75,7 @@
 	<key>NSContactsUsageDescription</key>
 	<string>To update the contact photo with an image showing the current BG values</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Read glucose and meal nutrition so you can compare foods with glucose responses.</string>
+	<string>Read meal nutrition, workouts, and sleep you choose to share, to show context alongside your glucose. Workouts and sleep stay on this device and are not sent to AI.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Store glucose readings and confirmed meal nutrition.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -142,8 +142,6 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>UIUserInterfaceStyle</key>
-	<string>Light</string>
 	<key>view controller-based status bar</key>
 	<false/>
 </dict>

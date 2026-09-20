@@ -12,11 +12,11 @@ enum MealStatus: String, Codable {
 
     var displayName: String {
         switch self {
-        case .draft: return "Not analyzed"
+        case .draft: return "Saved"
         case .analyzing: return "Analyzing…"
-        case .estimated: return "AI estimate — review needed"
+        case .estimated: return "AI estimate"
         case .confirmed: return "Confirmed"
-        case .failed: return "Analysis failed"
+        case .failed: return "Saved · estimate unavailable"
         }
     }
 }
@@ -49,6 +49,7 @@ struct MealFoodItem: Codable {
     var nutrients: MealNutrients
     var confidence: Double
     var evidence: String
+    var foodEvidence: FoodEvidence?
 }
 
 struct MealAnalysis: Codable {
@@ -78,13 +79,28 @@ struct MealRecord: Codable {
     var revision: Int
     var createdAt: Date
     var updatedAt: Date
+    // Optional for backward-compatible decoding. Only explicitly queued meals are uploaded.
+    var analysisRequestID: UUID?
+    var analysisAttempts: Int?
+    var analysisRetryAfter: Date?
+    // Optional, local-only correction. Never changes or re-uploads the original meal.
+    var keepResponseSeparate: Bool?
+    var userMealName: String?
+    var userFoodItems: [MealFoodItem]?
+
+    var foodItems: [MealFoodItem] { userFoodItems ?? analysis?.items ?? [] }
 
     var displayTitle: String {
+        if let name = userMealName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
         if let title = analysis?.title.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
             return title
         }
         let trimmedComment = userComment.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedComment.isEmpty ? "Meal photo" : trimmedComment
+    }
+
+    var captureStatus: String {
+        analysisRequestID != nil ? (status == .analyzing ? "Analyzing…" : "Saved · analysis queued") : status.displayName
     }
 }
 
@@ -100,27 +116,29 @@ final class MealStore {
     private let directoryURL: URL
     private let indexURL: URL
     private var records: [MealRecord] = []
+    private(set) var loadError: String?
 
-    private init() {
+    init(testDirectory: URL? = nil) {
         let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        directoryURL = applicationSupport.appendingPathComponent("LibreMeals", isDirectory: true)
+        directoryURL = testDirectory ?? applicationSupport.appendingPathComponent("LibreMeals", isDirectory: true)
         indexURL = directoryURL.appendingPathComponent("meals.json")
 
         do {
             try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-            if let data = try? Data(contentsOf: indexURL) {
+            if fileManager.fileExists(atPath: indexURL.path) {
+                let data = try Data(contentsOf: indexURL)
                 records = try JSONDecoder().decode([MealRecord].self, from: data)
                 records = records.map { record in
                     var repaired = record
                     if repaired.status == .analyzing {
                         repaired.status = .failed
-                        repaired.analysisError = "Analysis was interrupted. Tap Analyze to retry."
+                        repaired.analysisError = "Analysis was interrupted. Your photo is saved."
                     }
                     return repaired
                 }
             }
         } catch {
-            records = []
+            loadError = "Your saved journal could not be opened. It has not been changed. Unlock your iPhone and reopen the app. If this continues, keep the app installed and contact support."
             NSLog("MEAL_CAPTURE failed to initialize store: %@", error.localizedDescription)
         }
     }
@@ -135,12 +153,12 @@ final class MealStore {
         queue.sync { records.first { $0.id == id } }
     }
 
-    func create(image: UIImage, capturedAt: Date = Date()) throws -> MealRecord {
+    func create(image: UIImage, capturedAt: Date = Date(), requestAnalysis: Bool = false, id: UUID = UUID(), eatenAt: Date? = nil) throws -> MealRecord {
+        try ensureAvailable()
         guard let imageData = image.mealJPEGData(maxDimension: 2048, compressionQuality: 0.86) else {
             throw MealStoreError.imageEncodingFailed
         }
 
-        let id = UUID()
         let filename = id.uuidString.lowercased() + ".jpg"
         let imageURL = directoryURL.appendingPathComponent(filename)
         try imageData.write(to: imageURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -149,7 +167,7 @@ final class MealStore {
         let record = MealRecord(
             id: id,
             capturedAt: capturedAt,
-            eatenAt: capturedAt,
+            eatenAt: eatenAt ?? capturedAt,
             timeZoneIdentifier: TimeZone.current.identifier,
             imageFilename: filename,
             imageSHA256: digest,
@@ -160,12 +178,19 @@ final class MealStore {
             healthKitCorrelationUUID: nil,
             revision: 1,
             createdAt: capturedAt,
-            updatedAt: capturedAt
+            updatedAt: capturedAt,
+            analysisRequestID: requestAnalysis ? UUID() : nil
         )
 
-        try queue.sync {
-            records.append(record)
-            try persistLocked()
+        do {
+            try queue.sync {
+                let updated = records + [record]
+                try persistLocked(updated)
+                records = updated
+            }
+        } catch {
+            try? fileManager.removeItem(at: imageURL)
+            throw error
         }
         notifyChanged()
         NSLog("MEAL_CAPTURE created meal=%@ imageSHA256=%@", id.uuidString, digest)
@@ -173,25 +198,49 @@ final class MealStore {
     }
 
     func save(_ record: MealRecord) throws {
+        try ensureAvailable()
         try queue.sync {
+            var updated = records
             var updatedRecord = record
             updatedRecord.updatedAt = Date()
-            if let index = records.firstIndex(where: { $0.id == updatedRecord.id }) {
-                records[index] = updatedRecord
+            if let index = updated.firstIndex(where: { $0.id == updatedRecord.id }) {
+                updated[index] = updatedRecord
             } else {
-                records.append(updatedRecord)
+                updated.append(updatedRecord)
             }
-            try persistLocked()
+            try persistLocked(updated)
+            records = updated
         }
         notifyChanged()
         NSLog("MEAL_CAPTURE saved meal=%@ status=%@ revision=%d", record.id.uuidString, record.status.rawValue, record.revision)
     }
 
+    /// Atomic edit that never recreates a deleted record. Background results use an input token.
+    @discardableResult
+    func update(id: UUID, matching requestID: UUID? = nil, _ mutation: (inout MealRecord) -> Void) throws -> MealRecord? {
+        try ensureAvailable()
+        let result: MealRecord? = try queue.sync {
+            guard let index = records.firstIndex(where: { $0.id == id }),
+                  requestID == nil || records[index].analysisRequestID == requestID else { return nil }
+            var updated = records
+            mutation(&updated[index])
+            updated[index].updatedAt = Date()
+            try persistLocked(updated)
+            records = updated
+            return updated[index]
+        }
+        if result != nil { notifyChanged() }
+        return result
+    }
+
     func delete(id: UUID) throws -> MealRecord? {
+        try ensureAvailable()
         let deleted: MealRecord? = try queue.sync {
             guard let index = records.firstIndex(where: { $0.id == id }) else { return nil }
-            let record = records.remove(at: index)
-            try persistLocked()
+            var updated = records
+            let record = updated.remove(at: index)
+            try persistLocked(updated)
+            records = updated
             let imageURL = directoryURL.appendingPathComponent(record.imageFilename)
             try? fileManager.removeItem(at: imageURL)
             return record
@@ -210,10 +259,14 @@ final class MealStore {
         try? Data(contentsOf: directoryURL.appendingPathComponent(record.imageFilename))
     }
 
-    private func persistLocked() throws {
+    private func ensureAvailable() throws {
+        if let loadError { throw MealStoreError.unavailable(loadError) }
+    }
+
+    private func persistLocked(_ updated: [MealRecord]) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(records)
+        let data = try encoder.encode(updated)
         try data.write(to: indexURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
@@ -226,15 +279,122 @@ final class MealStore {
 
 enum MealStoreError: LocalizedError {
     case imageEncodingFailed
+    case unavailable(String)
 
     var errorDescription: String? {
         switch self {
         case .imageEncodingFailed: return "The meal photo could not be saved."
+        case .unavailable(let message): return message
         }
     }
 }
 
+#if targetEnvironment(simulator) && DEBUG
+extension MealStore {
+    static func simulatorMealFixture() throws -> MealRecord {
+        if var meal = shared.all().first(where: { $0.userComment.hasPrefix("SIMULATOR FIXTURE") }) {
+            // Keep synthetic preview data aligned with the moving synthetic glucose window.
+            meal.eatenAt = Date().addingTimeInterval(-3 * 3600)
+            try shared.save(meal)
+            return meal
+        }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 300)).image { context in
+            UIColor.systemTeal.setFill(); context.fill(CGRect(x: 0, y: 0, width: 400, height: 300))
+            ("Sample meal\nSimulator only" as NSString).draw(in: CGRect(x: 30, y: 95, width: 340, height: 180), withAttributes: [.font: UIFont.systemFont(ofSize: 32, weight: .bold), .foregroundColor: UIColor.white])
+        }
+        var meal = try shared.create(image: image, capturedAt: Date().addingTimeInterval(-3 * 3600))
+        meal.userComment = "SIMULATOR FIXTURE · Oats, yogurt and berries. Walked after breakfast."
+        meal.analysis = MealAnalysis(title: "Oats, yogurt & berries", summary: "Synthetic test estimate", items: [], nutrients: MealNutrients(carbohydratesG: 35, proteinG: 12, fatG: 8, fiberG: 4, sugarG: 9, energyKcal: 260), overallConfidence: 0.5, assumptions: ["Portion is unknown"], questions: [], model: "simulator", analyzedAt: Date())
+        meal.status = .estimated
+        try shared.save(meal)
+        return meal
+    }
+
+    /// Exercises the production store against disposable old-format fixtures, never the app's journal.
+    static func runPersistenceChecks() {
+        do {
+            let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("JournalUpgradeTests-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: temporary) }
+            let index = temporary.appendingPathComponent("meals.json")
+            let fixture = """
+            [{"id":"03214BEE-F21F-4131-9919-58D8AD67B533","capturedAt":700000000,"eatenAt":700000060,"timeZoneIdentifier":"Europe/Prague","imageFilename":"original.jpg","imageSHA256":"legacy-hash","userComment":"Original note","status":"confirmed","healthKitCorrelationUUID":"A967B7E3-D45D-4FD5-A7DE-AD467283631E","revision":4,"createdAt":700000000,"updatedAt":700000070,"analysis":{"title":"Breakfast","summary":"Reviewed estimate","items":[],"nutrients":{"carbohydratesG":35,"proteinG":12,"fatG":8,"fiberG":4,"sugarG":9,"energyKcal":260},"overallConfidence":0.6,"assumptions":[],"questions":[],"model":"legacy-model","analyzedAt":700000065}}]
+            """
+            try Data(fixture.utf8).write(to: index)
+            let photo = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 16)).image { context in
+                UIColor.systemTeal.setFill(); context.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
+            }
+            let imageData = photo.jpegData(compressionQuality: 0.8)!
+            try imageData.write(to: temporary.appendingPathComponent("original.jpg"))
+            let store = MealStore(testDirectory: temporary)
+            precondition(store.loadError == nil && store.all().count == 1)
+            var original = store.all()[0]
+            let id = original.id
+            let originalTime = original.eatenAt
+            let healthID = original.healthKitCorrelationUUID
+            precondition(store.imageData(for: original) == imageData)
+            original.userComment = "Edited after upgrade"
+            try store.save(original)
+            let reloaded = MealStore(testDirectory: temporary)
+            let saved = reloaded.record(id: id)!
+            precondition(saved.keepResponseSeparate == nil)
+            let legacyItem = Data(#"{"name":"Banana","portion":"1 medium","nutrients":{},"confidence":0.9,"evidence":"Visible"}"#.utf8)
+            let decodedItem = try JSONDecoder().decode(MealFoodItem.self, from: legacyItem)
+            precondition(decodedItem.foodEvidence == nil && decodedItem.name == "Banana")
+            var newItem = decodedItem
+            newItem.foodEvidence = FoodEvidence(canonicalName: "banana", preparation: "raw", brand: nil, ripeness: "ripe", source: "visible")
+            let restoredItem = try JSONDecoder().decode(MealFoodItem.self, from: JSONEncoder().encode(newItem))
+            precondition(restoredItem.foodEvidence == newItem.foodEvidence)
+            let properties = MealAIClient.responseSchema["properties"] as! [String: Any]
+            let items = properties["items"] as! [String: Any]
+            let itemSchema = items["items"] as! [String: Any]
+            precondition((itemSchema["required"] as! [String]).contains("foodEvidence"))
+            precondition(saved.eatenAt == originalTime && saved.healthKitCorrelationUUID == healthID)
+            precondition(saved.revision == 4 && saved.analysis?.nutrients.carbohydratesG == 35)
+            precondition(saved.imageSHA256 == "legacy-hash" && reloaded.imageData(for: saved) == imageData)
+            precondition(saved.userComment == "Edited after upgrade")
+            precondition(saved.userMealName == nil && saved.userFoodItems == nil)
+            try reloaded.update(id: id) {
+                $0.userMealName = "My breakfast"
+                $0.userFoodItems = [newItem]
+            }
+            let corrected = MealStore(testDirectory: temporary).record(id: id)!
+            precondition(corrected.displayTitle == "My breakfast" && corrected.foodItems.first?.name == "Banana")
+            precondition(corrected.analysis?.title == "Breakfast" && corrected.healthKitCorrelationUUID == healthID)
+            precondition(reloaded.imageData(for: corrected) == imageData)
+            let photoTime = Date().addingTimeInterval(-7200)
+            let imported = try reloaded.create(image: photo, eatenAt: photoTime)
+            precondition(MealStore(testDirectory: temporary).record(id: imported.id)?.eatenAt == photoTime)
+
+            let damaged = Data("not valid JSON".utf8)
+            try damaged.write(to: index)
+            let unavailable = MealStore(testDirectory: temporary)
+            precondition(unavailable.loadError != nil)
+            do { try unavailable.save(original); preconditionFailure("Corrupt index was writable") } catch {}
+            do { _ = try unavailable.create(image: photo); preconditionFailure("Corrupt index accepted photo") } catch {}
+            do { _ = try unavailable.delete(id: id); preconditionFailure("Corrupt index was deletable") } catch {}
+            let unchanged = try Data(contentsOf: index)
+            precondition(unchanged == damaged)
+
+            // A failed disk write must not mutate the in-memory list either.
+            try FileManager.default.removeItem(at: index)
+            try FileManager.default.createDirectory(at: index, withIntermediateDirectories: false)
+            original.userComment = "Must not survive failed write"
+            do { try reloaded.save(original); preconditionFailure("Expected write failure") } catch {}
+            precondition(reloaded.record(id: id)?.userComment == "Edited after upgrade")
+            NSLog("JOURNAL_UPGRADE_CHECKS PASS legacy decode, manual food overrides, import time, edit/reload, IDs, photo, nutrition, HealthKit reference, corrupt-index write protection, failed-write rollback")
+        } catch { preconditionFailure("Journal persistence test failed: \(error)") }
+    }
+}
+#endif
+
 enum MealAISettings {
+    static let defaultModel = "gpt-5-mini"
+    static var automaticAnalysis: Bool {
+        get { UserDefaults.standard.object(forKey: "LibreDebug.MealAI.automatic") == nil || UserDefaults.standard.bool(forKey: "LibreDebug.MealAI.automatic") }
+        set { UserDefaults.standard.set(newValue, forKey: "LibreDebug.MealAI.automatic") }
+    }
+    static var shouldAnalyzeNewMeals: Bool { automaticAnalysis && hasAPIKey }
     private static let modelKey = "LibreDebug.MealAI.model"
     private static let healthKitKey = "LibreDebug.MealAI.writeHealthKit"
     private static let keychainAccount = "openai-api-key"
@@ -242,11 +402,11 @@ enum MealAISettings {
     static var model: String {
         get {
             let stored = UserDefaults.standard.string(forKey: modelKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return stored?.isEmpty == false ? stored! : "gpt-5-mini"
+            return stored?.isEmpty == false ? stored! : defaultModel
         }
         set {
             let clean = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            UserDefaults.standard.set(clean.isEmpty ? "gpt-5-mini" : clean, forKey: modelKey)
+            UserDefaults.standard.set(clean.isEmpty ? defaultModel : clean, forKey: modelKey)
         }
     }
 
@@ -290,7 +450,9 @@ enum MealAISettings {
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainAccount
         ]
-        SecItemDelete(baseQuery as CFDictionary)
+        let updateStatus = SecItemUpdate(baseQuery as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else { throw MealKeychainError.status(updateStatus) }
 
         var addQuery = baseQuery
         addQuery[kSecValueData as String] = data

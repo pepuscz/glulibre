@@ -7,6 +7,7 @@ UserInterfaceState.xcuserstate
 iBreakpoints_v2.xcbkptlist
 xdrip.xcodeproj/xcuserdata/johandegraeve.xcuserdatad/xcdebugger/
 Package.resolved
+!xdrip.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 # Ruby version settings
 .ruby-version
@@ -35,6 +36,9 @@ profile
 
 DerivedData/
 DerivedData-LibreDebug/
+DerivedData-*/
+*.pch
+*.xcresult/
 
 # NB: slash on the end, so we only remove the FOLDER, not any files that were badly named "build"
 
@@ -123,3 +127,19 @@ xdripswift.wiki/
 commit.txt
 
 *.bak
+
+# Local Swift regression-test build products
+/.build/
+
+# Generated from the committed UI-audit project.yml
+/Tests/JourneyAudit/LibreJourneyAudit.xcodeproj/
+/Tests/WatchJourneyAudit/LibreWatchJourneyAudit.xcodeproj/
+
+# Local research caches, signing material and environment secrets
+.last30days-library.db*
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.mobileprovision

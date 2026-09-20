@@ -31,6 +31,7 @@ final class WatchManager: NSObject, ObservableObject {
     
     /// keep track of when we last forced a complication update from within the code
     private var lastForcedComplicationUpdateTimeStamp: Date = .distantPast
+    private var mealObserver: NSObjectProtocol?
     
     /// for logging
     private var log = OSLog(subsystem: ConstantsLog.subSystem, category: ConstantsLog.categoryWatchManager)
@@ -56,6 +57,9 @@ final class WatchManager: NSObject, ObservableObject {
         UserDefaults.standard.addObserver(self, forKeyPath: UserDefaults.Key.nightscoutDeviceStatusWasUpdated.rawValue, options: .new, context: nil)
         
         processWatchState(forceComplicationUpdate: false)
+        mealObserver = NotificationCenter.default.addObserver(forName: .mealStoreDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.processWatchState(forceComplicationUpdate: false)
+        }
     }
     
     // MARK: - overriden functions
@@ -123,6 +127,7 @@ final class WatchManager: NSObject, ObservableObject {
         // now process the WatchState
         watchState.bgReadingValues = bgReadingValues
         watchState.bgReadingDatesAsDouble = bgReadingDatesAsDouble
+        watchState.bgReadingSensorIDs = bgReadings.map { $0.sensor?.id ?? "" }
         watchState.isMgDl = UserDefaults.standard.bloodGlucoseUnitIsMgDl
         watchState.slopeOrdinal = slopeOrdinal
         watchState.deltaValueInUserUnit = deltaValueInUserUnit
@@ -169,8 +174,26 @@ final class WatchManager: NSObject, ObservableObject {
         }
         
         watchState.remainingComplicationUserInfoTransfers = session.remainingComplicationUserInfoTransfers
-        
-        sendStateToWatch(forceComplicationUpdate: false)
+        watchState.generatedAt = Date().timeIntervalSince1970
+        watchState.lastMeal = latestMealSnapshot()
+        sendStateToWatch(forceComplicationUpdate: forceComplicationUpdate)
+    }
+
+    private func latestMealSnapshot() -> WatchMealSnapshot? {
+        let now = Date()
+        let meals = MealStore.shared.all().filter { $0.eatenAt <= now }
+        guard let meal = meals.first, now.timeIntervalSince(meal.eatenAt) < 24 * 3600 else { return nil }
+        let readings = bgReadingsAccessor.getLatestBgReadingSnapshots(limit: nil,
+            fromDate: meal.eatenAt.addingTimeInterval(-15 * 60), forSensor: nil,
+            ignoreRawData: true, ignoreCalculatedValue: false)
+        let points = readings.map { JournalGlucosePoint(date: $0.timeStamp, mgDl: $0.calculatedValue, sensorID: $0.sensorID) }
+        let observation = GlucoseObservations.meal(at: meal.eatenAt,
+            otherMealDates: meals.filter { $0.id != meal.id }.map(\.eatenAt), points: points, now: now)
+        let collecting = now < observation.interval.end
+        let state = collecting ? "collecting" : (observation.rise == nil ? "limited" : "ready")
+        return WatchMealSnapshot(title: String(meal.displayTitle.prefix(80)), eatenAt: meal.eatenAt.timeIntervalSince1970,
+            state: state, riseMgDl: observation.rise,
+            detail: collecting ? "Two-hour observation" : (observation.limitation ?? "Observed after this meal"))
     }
     
     func sendStateToWatch(forceComplicationUpdate: Bool) {
@@ -196,6 +219,9 @@ final class WatchManager: NSObject, ObservableObject {
         // if more than x minutes have passed since the last complication update, call transferCurrentComplicationUserInfo to force an update
         // if not, then just send it as a normal priority transferUserInfo (but limit the sending to once every 5 minutes!) which will be queued and sent as soon as the watch app is reachable again (this will help get the app showing data quicker)
         if let userInfo: [String: Any] = watchState.asDictionary {
+            // Replace the pending snapshot instead of queuing every minute of history.
+            do { try session.updateApplicationContext(["watchState": userInfo]) }
+            catch { trace("watch context update failed: %{public}@", log: log, category: ConstantsLog.categoryWatchManager, type: .error, error.localizedDescription) }
             if session.isReachable {
                 session.sendMessage(["watchState": userInfo], replyHandler: nil, errorHandler: { [weak self] error in
                     guard let self = self else { return }
@@ -213,7 +239,7 @@ final class WatchManager: NSObject, ObservableObject {
                 } else {
                     trace("sending background watch state update", log: log, category: ConstantsLog.categoryWatchManager, type: .debug)
                     
-                    session.transferUserInfo(["watchState": userInfo])
+                    // Application context already carries the newest background state.
                 }
             }
         }
@@ -226,6 +252,7 @@ final class WatchManager: NSObject, ObservableObject {
     }
     
     deinit {
+        if let mealObserver { NotificationCenter.default.removeObserver(mealObserver) }
         UserDefaults.standard.removeObserver(self, forKeyPath: UserDefaults.Key.nightscoutDeviceStatusWasUpdated.rawValue)
     }
 }
@@ -241,7 +268,11 @@ extension WatchManager: WCSessionDelegate {
         session.activate()
     }
     
-    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {}
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        if activationState == .activated {
+            DispatchQueue.main.async { self.processWatchState(forceComplicationUpdate: false) }
+        }
+    }
     
     // process any received messages from the watch app
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
@@ -250,7 +281,7 @@ extension WatchManager: WCSessionDelegate {
             switch requestWatchUpdate {
             case "watchState":
                 DispatchQueue.main.async {
-                    self.sendStateToWatch(forceComplicationUpdate: false)
+                    self.processWatchState(forceComplicationUpdate: false)
                 }
             default:
                 break

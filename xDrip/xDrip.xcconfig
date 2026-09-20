@@ -7,7 +7,7 @@
 MAIN_APP_BUNDLE_IDENTIFIER = com.$(DEVELOPMENT_TEAM).xdripswift
 
 // Application name [DEFAULT]
-MAIN_APP_DISPLAY_NAME = xDrip4iO5
+MAIN_APP_DISPLAY_NAME = Libre Debug
 
 // Entitlements [DEFAULT]
 XDRIP_ENTITLEMENTS_RELEASE = xdrip/xDrip.entitlements
@@ -20,7 +20,8 @@ XDRIP_ENTITLEMENTS_DEBUG = xdrip/xdripDebug.entitlements
 XDRIP_CODE_SIGN_IDENTITY_DEBUG = Apple Development
 XDRIP_CODE_SIGN_IDENTITY_RELEASE = Apple Development
 XDRIP_CODE_SIGN_STYLE = Automatic
-XDRIP_DEVELOPMENT_TEAM = RNX44PP998
+// Set your own team in xDripConfigOverride.xcconfig; never borrow upstream signing.
+XDRIP_DEVELOPMENT_TEAM =
 
 // Version [DEFAULT]
 #include? "Version.xcconfig"

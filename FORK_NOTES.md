@@ -1,59 +1,27 @@
-# Fork notes
+# Fork history
 
-This fork is based on upstream xDrip4iOS 6.3.3 (`69eb8833`) and contains a
-personal diagnostic workflow for Libre 2/2+ plus simple meal capture.
+Libre Debug is a modified version of [xDrip4iOS / xdripswift](https://github.com/JohanDegraeve/xdripswift), not an upstream release. Original copyrights, source headers and the GPL license remain in place. See [NOTICE.md](NOTICE.md).
 
-## Working checkpoint
+## Starting point
 
-- Stable/default branch: `main`
-- Original development branch: `debug/libre-pairing`
-- Verified on: 2026-09-19
-- Sensor: Libre 2 Plus EU 7F
-- Verified flow: one activation scan, 60-minute warm-up, one streaming handoff,
-  BLE discovery, unlock, and glucose delivery
-- The tested replacement sensor connected successfully and the app received
-  its first ten glucose samples after the BLE fix.
+- Upstream checkpoint: 6.3.3, [`69eb8833`](https://github.com/JohanDegraeve/xdripswift/commit/69eb8833).
+- Fork modifications: 24 August–20 September 2026.
+- `main` contains the original fork checkpoint; ongoing work lives on feature branches. Consult the actual branch before assuming a screen or feature is released.
+- `master` was retained as an upstream 7.x mirror. Do not automatically merge that architecture into this fork; port deliberately and revalidate on hardware.
 
-The Libre diagnostic behavior is compiled only in Debug builds. It prevents
-automatic NFC retries during the warm-up, gives distinct completion haptics,
-schedules a warm-up notification, records detailed NFC/BLE traces, clears the
-previous sensor's CoreBluetooth identifier during handoff, and can recover the
-correct 7F sensor from the UID in its manufacturer advertisement.
+## What changed
 
-## Meal capture
+- Libre 2/2+ diagnostic flow, warm-up completion notification, completion haptics and Bluetooth handoff recovery. The replacement Libre 2 Plus EU sensor delivered valid readings in physical-device testing on 19 September 2026. The fork's diagnostic additions are Debug-only; this does not certify every sensor or region.
+- Photo-first meal journal with optional notes, durable saving before background analysis, editable food estimates and confirmed nutrition export.
+- Optional OpenAI analysis using a Keychain-stored user key and editable model ID. New meals can be analyzed automatically when enabled; **the original tap-Analyze-only description is no longer current**.
+- Repeated whole-meal response comparisons, with sensor coverage and meal timing checks. Workouts and sleep from Apple Health provide context, not causal adjustments.
+- Native iPhone presentation, chart-first Today, landscape inspection and an Apple Watch companion with complications.
+- Repository documentation, preserved license/credits, bundled legal text and explicit release checks.
 
-The Treatments screen includes a camera/photo meal entry with an optional user
-comment. Analysis is sent to OpenAI only after the user taps Analyze. The API
-key is stored in the iPhone Keychain, photos and draft data stay local, and
-estimated nutrition is written to HealthKit only after confirmation.
+The original sensor, persistence and integration machinery remains underneath the new presentation. Removing an old screen is not permission to remove users' data or saved connections.
 
-## Local signing and build
+## Working with this fork
 
-`xDripConfigOverride.xcconfig` is intentionally ignored. A local copy can set:
+Use [DEVELOPMENT.md](docs/DEVELOPMENT.md) for local builds and [CONTRIBUTING.md](CONTRIBUTING.md) for change boundaries. Historical implementation notes under `docs/` describe individual checkpoints; they are not current feature promises.
 
-```xcconfig
-XDRIP_DEVELOPMENT_TEAM = YOUR_TEAM_ID
-MAIN_APP_DISPLAY_NAME = Libre Debug
-MAIN_APP_BUNDLE_IDENTIFIER = com.example.libredebug
-```
-
-Build the workspace rather than the project so Swift Package dependencies are
-resolved correctly:
-
-```sh
-xcodebuild -workspace xdrip.xcworkspace \
-  -scheme xdrip \
-  -configuration Debug \
-  -destination 'id=YOUR_DEVICE_UDID' \
-  -derivedDataPath DerivedData-LibreDebug \
-  -allowProvisioningUpdates build
-```
-
-Do not commit API keys, signing credentials, device logs, or DerivedData.
-
-This is experimental software and is not a substitute for the manufacturer's
-app, a blood glucose meter, or medical advice.
-
-The fork's `master` branch is retained as an upstream 7.x mirror. Porting this
-checkpoint to that architecture should happen separately and be revalidated on
-real hardware before replacing `main`.
+Upstream provenance and history are intentionally preserved. Upstream synchronization is a maintainer decision, not an automated prerequisite to building the fork.

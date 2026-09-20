@@ -126,6 +126,10 @@ public enum AlertKind: Int, CaseIterable {
         }
     }
     
+    /// Trend notifications are specialist opt-ins, not a default judgment about meal peaks.
+    /// Applies only when a schedule is first created. Existing schedules remain untouched.
+    var enabledByDefault: Bool { self != .fastdrop && self != .fastrise }
+
     /// at initial startup, a default alertentry will be created for every kind of alert. This function defines the default value to be used
     func defaultAlertValue() -> Int {
         switch self {

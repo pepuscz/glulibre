@@ -18,13 +18,16 @@ extension XDripWatchComplication {
         }
         
         func getSnapshot(in context: Context, completion: @escaping (Entry) -> ()) {
-            completion(.placeholder)
+            completion(context.isPreview ? .placeholder : Entry(date: .now, widgetState: getWidgetStateFromSharedUserDefaults() ?? .init()))
         }
         
         func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> ()) {
-            let entry = Entry(date: .now, widgetState: getWidgetStateFromSharedUserDefaults() ?? sampleWidgetStateFromProvider)
-                
-            completion(.init(entries: [entry], policy: .never))
+            let now = Date()
+            let state = getWidgetStateFromSharedUserDefaults() ?? .init()
+            let entries = WatchGlancePolicy.timelineDates(readingDate: state.bgReadingDate, now: now)
+                .map { Entry(date: $0, widgetState: state) }
+            // A scheduled stale entry retires the value even if the phone stops sending.
+            completion(.init(entries: entries, policy: .after(now.addingTimeInterval(15 * 60))))
         }
     }
 }
@@ -44,6 +47,9 @@ extension XDripWatchComplication.Provider {
 
         do {
             let data = try decoder.decode(ComplicationSharedUserDefaultsModel.self, from: encodedLatestReadings)
+            guard data.bgReadingValues.count == data.bgReadingDatesAsDouble.count,
+                  data.bgReadingValues.allSatisfy({ $0.isFinite }),
+                  data.bgReadingDatesAsDouble.allSatisfy({ $0.isFinite }) else { return nil }
             
             // because dates aren't Codable we stored them as doubles
             // we need to convert the bgReadingDatesAsDouble key values to an array of real dates
@@ -56,10 +62,6 @@ extension XDripWatchComplication.Provider {
             print(error.localizedDescription)
         }
               
-        return sampleWidgetStateFromProvider
-    }
-    
-    private var sampleWidgetStateFromProvider: XDripWatchComplication.Entry.WidgetState {        
-        return Entry.WidgetState(bgReadingValues: ConstantsWatchComplication.bgReadingValuesPlaceholderData, bgReadingDates: ConstantsWatchComplication.bgReadingDatesPlaceholderData(), isMgDl: true, slopeOrdinal: 4, deltaValueInUserUnit: 0, urgentLowLimitInMgDl: 70, lowLimitInMgDl: 90, highLimitInMgDl: 140, urgentHighLimitInMgDl: 180, liveDataIsEnabled: true)
+        return nil
     }
 }

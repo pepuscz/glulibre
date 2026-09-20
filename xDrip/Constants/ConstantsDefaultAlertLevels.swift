@@ -7,10 +7,13 @@ enum ConstantsDefaultAlertLevels {
     static let defaultBatteryAlertLevelLibre2 = 20
     static let defaultBatteryAlertLevelPhone = 10
     
-    // blood glucose level alert values in mgdl
+    // New schedules only; existing persisted personal schedules are never overwritten.
+    // Libre's published low/high defaults are 70/240 mg/dL. The ADA level-2
+    // hypoglycemia boundary is 54 mg/dL. These are safety thresholds, not food scores.
+    // Sources and applicability: docs/NOTIFICATIONS_4233.md.
     static let veryHigh = 250
-    static let veryLow = 50
-    static let high = 170
+    static let veryLow = 54
+    static let high = 240
     static let low = 70
     
     // blood glucose fast drop delta alert in mgdl

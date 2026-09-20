@@ -1,6 +1,7 @@
 import UIKit
+import PhotosUI
 
-final class MealCaptureCoordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+final class MealCaptureCoordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate, PHPickerViewControllerDelegate {
     private weak var presenter: UIViewController?
     private var completion: ((UIImage) -> Void)?
 
@@ -8,17 +9,48 @@ final class MealCaptureCoordinator: NSObject, UIImagePickerControllerDelegate, U
         self.presenter = presenter
         self.completion = completion
 
+        let choices = UIAlertController(title: "Log a meal", message: "Your photo is saved on this iPhone first. Add details whenever you’re ready.", preferredStyle: .actionSheet)
+        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+            choices.addAction(UIAlertAction(title: "Take photo", style: .default) { [weak self] _ in self?.openCamera() })
+        }
+        choices.addAction(UIAlertAction(title: "Choose photo", style: .default) { [weak self] _ in self?.openPhotos() })
+        choices.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in self?.completion = nil })
+        choices.popoverPresentationController?.sourceView = presenter.view
+        choices.popoverPresentationController?.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 1, height: 1)
+        presenter.present(choices, animated: true)
+    }
+
+    private func openCamera() {
         let picker = UIImagePickerController()
         picker.delegate = self
         picker.allowsEditing = false
         picker.modalPresentationStyle = .fullScreen
-        if UIImagePickerController.isSourceTypeAvailable(.camera) {
-            picker.sourceType = .camera
-            picker.cameraCaptureMode = .photo
-        } else {
-            picker.sourceType = .photoLibrary
+        picker.sourceType = .camera
+        picker.cameraCaptureMode = .photo
+        presenter?.present(picker, animated: true)
+    }
+
+    private func openPhotos() {
+        var configuration = PHPickerConfiguration()
+        configuration.filter = .images
+        configuration.selectionLimit = 1
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = self
+        presenter?.present(picker, animated: true)
+    }
+
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true) { [weak self] in
+            guard let self, let provider = results.first?.itemProvider else { self?.completion = nil; return }
+            let handler = self.completion
+            self.completion = nil
+            provider.loadObject(ofClass: UIImage.self) { [weak self] image, error in
+                DispatchQueue.main.async {
+                    if let image = image as? UIImage { handler?(image) }
+                    else { self?.presenter?.showAlert(title: "Photo unavailable", message: error?.localizedDescription ?? "Please choose another photo.") }
+                }
+            }
         }
-        presenter.present(picker, animated: true)
     }
 
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
@@ -48,14 +80,14 @@ final class MealListViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Meals"
-        view.backgroundColor = .black
+        view.backgroundColor = .systemGroupedBackground
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "camera.fill"),
             style: .plain,
             target: self,
             action: #selector(captureMeal)
         )
-        navigationItem.rightBarButtonItem?.tintColor = .systemYellow
+        navigationItem.rightBarButtonItem?.tintColor = UIColor(JournalStyle.accent)
 
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.backgroundColor = .black
@@ -136,9 +168,24 @@ extension MealListViewController: UITableViewDataSource, UITableViewDelegate {
             alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completion(false) })
             alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { _ in
                 Task {
-                    try? await MealHealthKitWriter.shared.deleteHealthKitMeal(for: record)
-                    _ = try? MealStore.shared.delete(id: record.id)
-                    await MainActor.run { completion(true) }
+                    do {
+                        try await MealHealthKitWriter.shared.deleteHealthKitMeal(for: record)
+                    } catch {
+                        await MainActor.run {
+                            completion(false)
+                            self.showAlert(title: "Meal not deleted", message: "The Apple Health entry could not be removed. Your local meal is unchanged. " + error.localizedDescription)
+                        }
+                        return
+                    }
+                    do {
+                        _ = try MealStore.shared.delete(id: record.id)
+                        await MainActor.run { completion(true) }
+                    } catch {
+                        await MainActor.run {
+                            completion(false)
+                            self.showAlert(title: "Local meal not deleted", message: "The Apple Health removal finished, but your photo and local meal could not be removed. Keep the app installed and retry later. " + error.localizedDescription)
+                        }
+                    }
                 }
             })
             self.present(alert, animated: true)
@@ -211,7 +258,7 @@ private final class MealTableViewCell: UITableViewCell {
     }
 }
 
-final class MealEditorViewController: UIViewController, UITextFieldDelegate {
+final class MealEditorViewController: UIViewController, UITextFieldDelegate, UITextViewDelegate {
     private let recordID: UUID
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
@@ -231,7 +278,8 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
     private let uncertaintyLabel = UILabel()
     private let analyzeButton = UIButton(type: .system)
     private let confirmButton = UIButton(type: .system)
-    private var analysisTask: Task<Void, Never>?
+    private var awaitingAnalysis = false
+    private var storeObserver: NSObjectProtocol?
     private var didPopulateFields = false
 
     init(recordID: UUID) {
@@ -241,20 +289,34 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    deinit { analysisTask?.cancel() }
+    deinit {
+        if let storeObserver { NotificationCenter.default.removeObserver(storeObserver) }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Meal"
-        view.backgroundColor = .black
+        view.backgroundColor = .systemGroupedBackground
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Save", style: .done, target: self, action: #selector(saveAndClose))
         setupLayout()
         populateFields()
+        awaitingAnalysis = MealStore.shared.record(id: recordID)?.analysisRequestID != nil
+        storeObserver = NotificationCenter.default.addObserver(forName: .mealStoreDidChange, object: nil, queue: .main) { [weak self] _ in
+            guard let self, let record = MealStore.shared.record(id: self.recordID) else { return }
+            self.updateStatus(record)
+            if self.awaitingAnalysis && record.analysisRequestID == nil {
+                self.awaitingAnalysis = false
+                self.applyAnalysis(record.analysis)
+            }
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if isMovingFromParent,
+        if isMovingFromParent || isBeingDismissed || navigationController?.isBeingDismissed == true {
+            MealAnalysisService.shared.release(recordID)
+        }
+        if (isMovingFromParent || isBeingDismissed || navigationController?.isBeingDismissed == true),
            let record = MealStore.shared.record(id: recordID),
            fieldsDiffer(from: record) {
             _ = try? persistFromFields(markConfirmedAsNeedingReview: true)
@@ -287,16 +349,18 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
         photoView.contentMode = .scaleAspectFit
         photoView.clipsToBounds = true
         photoView.layer.cornerRadius = 12
-        photoView.backgroundColor = UIColor(white: 0.08, alpha: 1)
+        photoView.backgroundColor = .secondarySystemGroupedBackground
         photoView.heightAnchor.constraint(equalToConstant: 240).isActive = true
         contentStack.addArrangedSubview(photoView)
 
-        let timeRow = UIStackView(arrangedSubviews: [makeLabel("Eating time", style: .body), eatenAtPicker])
-        timeRow.axis = .horizontal
+        let timeRow = UIStackView(arrangedSubviews: [makeLabel("When did you eat?", style: .headline), eatenAtPicker])
+        timeRow.axis = .vertical
+        timeRow.spacing = 8
         timeRow.alignment = .center
         timeRow.distribution = .equalSpacing
         eatenAtPicker.datePickerMode = .dateAndTime
         eatenAtPicker.preferredDatePickerStyle = .compact
+        eatenAtPicker.accessibilityLabel = "Eating time"
         contentStack.addArrangedSubview(timeRow)
 
         contentStack.addArrangedSubview(makeSectionLabel("Your comment"))
@@ -306,6 +370,8 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
         contentStack.addArrangedSubview(commentHelp)
 
         styleTextView(commentView)
+        commentView.delegate = self
+        commentView.accessibilityLabel = "Meal note"
         commentView.heightAnchor.constraint(equalToConstant: 92).isActive = true
         contentStack.addArrangedSubview(commentView)
 
@@ -315,7 +381,7 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
 
         configurePrimaryButton(analyzeButton, title: "Analyze photo & comment", action: #selector(analyze))
         contentStack.addArrangedSubview(analyzeButton)
-        let privacy = makeLabel("The photo and comment are sent to OpenAI only when you tap Analyze. The original remains on this iPhone.", style: .caption1)
+        let privacy = makeLabel("New meal photos and notes are analyzed automatically with your OpenAI key. Estimates stay editable.", style: .caption1)
         privacy.textColor = .secondaryLabel
         privacy.numberOfLines = 0
         contentStack.addArrangedSubview(privacy)
@@ -332,7 +398,7 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
         contentStack.addArrangedSubview(thirdNutrients)
 
         summaryLabel.numberOfLines = 0
-        summaryLabel.textColor = .white
+        summaryLabel.textColor = .label
         summaryLabel.font = .preferredFont(forTextStyle: .body)
         itemsLabel.numberOfLines = 0
         itemsLabel.textColor = .secondaryLabel
@@ -345,7 +411,7 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
         contentStack.addArrangedSubview(uncertaintyLabel)
 
         configurePrimaryButton(confirmButton, title: "Confirm meal", action: #selector(confirmMeal))
-        confirmButton.backgroundColor = .systemGreen
+        confirmButton.backgroundColor = UIColor(JournalStyle.accent)
         contentStack.addArrangedSubview(confirmButton)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
@@ -381,7 +447,7 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
             return
         }
 
-        var notes = [String(format: "Overall confidence: %.0f%%", analysis.overallConfidence * 100)]
+        var notes = ["AI estimate, not a measurement. Review foods and portions."]
         if !analysis.assumptions.isEmpty {
             notes.append("Assumptions: " + analysis.assumptions.joined(separator: "; "))
         }
@@ -416,39 +482,19 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
             return
         }
 
-        var analyzingRecord = current
-        analyzingRecord.status = .analyzing
-        analyzingRecord.analysisError = nil
-        try? MealStore.shared.save(analyzingRecord)
-        updateStatus(analyzingRecord)
+        _ = image // Image availability was checked above; the service owns the request.
+        do {
+            awaitingAnalysis = true
+            try MealAnalysisService.shared.enqueue(current.id)
+            MealAnalysisService.shared.release(current.id)
+        } catch { showAlert(title: "Couldn’t queue analysis", message: error.localizedDescription) }
+    }
 
-        analysisTask?.cancel()
-        analysisTask = Task { [weak self] in
-            guard let self = self else { return }
-            do {
-                let analysis = try await MealAIClient().analyze(image: image, userComment: analyzingRecord.userComment)
-                guard !Task.isCancelled else { return }
-                var completed = MealStore.shared.record(id: self.recordID) ?? analyzingRecord
-                completed.analysis = analysis
-                completed.status = .estimated
-                completed.analysisError = nil
-                try MealStore.shared.save(completed)
-                await MainActor.run {
-                    self.applyAnalysis(analysis)
-                    self.updateStatus(completed)
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-                var failed = MealStore.shared.record(id: self.recordID) ?? analyzingRecord
-                failed.status = failed.analysis == nil ? .failed : .estimated
-                failed.analysisError = error.localizedDescription
-                try? MealStore.shared.save(failed)
-                await MainActor.run {
-                    self.updateStatus(failed)
-                    self.showAlert(title: "Analysis Failed", message: error.localizedDescription)
-                }
-            }
-        }
+    func textFieldDidBeginEditing(_ textField: UITextField) { pauseAnalysisForEditing() }
+    func textViewDidBeginEditing(_ textView: UITextView) { pauseAnalysisForEditing() }
+    private func pauseAnalysisForEditing() {
+        awaitingAnalysis = false
+        MealAnalysisService.shared.pauseEditing(recordID)
     }
 
     @objc private func confirmMeal() {
@@ -499,7 +545,8 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
             let existing = MealStore.shared.record(id: recordID)
             let changed = existing.map { fieldsDiffer(from: $0) } ?? true
             _ = try persistFromFields(markConfirmedAsNeedingReview: changed)
-            navigationController?.popViewController(animated: true)
+            if navigationController?.viewControllers.count == 1 { dismiss(animated: true) }
+            else { navigationController?.popViewController(animated: true) }
         } catch {
             showAlert(title: "Couldn’t Save Meal", message: error.localizedDescription)
         }
@@ -508,6 +555,7 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
     @discardableResult
     private func persistFromFields(markConfirmedAsNeedingReview: Bool) throws -> MealRecord {
         guard var record = MealStore.shared.record(id: recordID) else { throw MealEditorError.missingRecord }
+        if fieldsDiffer(from: record) { record.analysisRequestID = nil }
         record.eatenAt = eatenAtPicker.date
         record.timeZoneIdentifier = TimeZone.current.identifier
         record.userComment = commentView.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -590,17 +638,20 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
 
     private func styleTextField(_ field: UITextField, placeholder: String, keyboard: UIKeyboardType) {
         field.borderStyle = .roundedRect
-        field.backgroundColor = UIColor(white: 0.16, alpha: 1)
-        field.textColor = .white
+        field.backgroundColor = .secondarySystemGroupedBackground
+        field.textColor = .label
+        field.font = .preferredFont(forTextStyle: .body)
+        field.adjustsFontForContentSizeCategory = true
         field.placeholder = placeholder
         field.keyboardType = keyboard
         field.delegate = self
-        field.heightAnchor.constraint(equalToConstant: 42).isActive = true
+        field.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
     }
 
     private func styleTextView(_ textView: UITextView) {
-        textView.backgroundColor = UIColor(white: 0.16, alpha: 1)
-        textView.textColor = .white
+        textView.backgroundColor = .secondarySystemGroupedBackground
+        textView.textColor = .label
+        textView.adjustsFontForContentSizeCategory = true
         textView.font = .preferredFont(forTextStyle: .body)
         textView.layer.cornerRadius = 9
         textView.layer.borderColor = UIColor.darkGray.cgColor
@@ -609,17 +660,19 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
 
     private func configurePrimaryButton(_ button: UIButton, title: String, action: Selector) {
         button.setTitle(title, for: .normal)
-        button.setTitleColor(.black, for: .normal)
+        button.setTitleColor(.white, for: .normal)
         button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
-        button.backgroundColor = .systemYellow
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.titleLabel?.numberOfLines = 0
+        button.backgroundColor = UIColor(JournalStyle.accent)
         button.layer.cornerRadius = 10
-        button.heightAnchor.constraint(equalToConstant: 48).isActive = true
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
         button.addTarget(self, action: action, for: .touchUpInside)
     }
 
     private func makeSectionLabel(_ text: String) -> UILabel {
         let label = makeLabel(text, style: .headline)
-        label.textColor = .white
+        label.textColor = .label
         return label
     }
 
@@ -627,6 +680,8 @@ final class MealEditorViewController: UIViewController, UITextFieldDelegate {
         let label = UILabel()
         label.text = text
         label.font = .preferredFont(forTextStyle: style)
+        label.adjustsFontForContentSizeCategory = true
+        label.numberOfLines = 0
         return label
     }
 
