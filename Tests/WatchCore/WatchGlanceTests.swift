@@ -4,6 +4,23 @@ import XCTest
 final class WatchGlanceTests: XCTestCase {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
 
+    func testUserAddedComplicationShowsReadingsUnlessExplicitlyDisabled() {
+        XCTAssertTrue(WatchGlancePolicy.showsReadings(savedValue: nil))
+        XCTAssertTrue(WatchGlancePolicy.showsReadings(savedValue: true))
+        XCTAssertFalse(WatchGlancePolicy.showsReadings(savedValue: false))
+    }
+
+    func testComplicationDistinguishesHiddenMissingAndStaleWithoutSyncLabel() {
+        XCTAssertEqual(WatchGlancePolicy.unavailableLabel(enabled: false, value: 100, date: now, now: now), "Off")
+        XCTAssertEqual(WatchGlancePolicy.unavailableLabel(enabled: true, value: nil, date: nil, now: now), "—")
+        XCTAssertEqual(WatchGlancePolicy.unavailableLabel(enabled: true, value: .nan, date: now, now: now), "—")
+        XCTAssertEqual(WatchGlancePolicy.unavailableLabel(enabled: true, value: 0, date: now, now: now), "—")
+        XCTAssertEqual(WatchGlancePolicy.unavailableLabel(enabled: true, value: 100, date: now.addingTimeInterval(10), now: now), "—")
+        XCTAssertEqual(WatchGlancePolicy.unavailableLabel(enabled: true, value: 100, date: now.addingTimeInterval(-420), now: now), "7m")
+        XCTAssertEqual(WatchGlancePolicy.unavailableLabel(enabled: true, value: 100, date: now.addingTimeInterval(-7200), now: now), "2h")
+        XCTAssertEqual(WatchGlancePolicy.unavailableLabel(enabled: true, value: 100, date: now, now: now), "")
+    }
+
     func testFreshnessUsesReadingAndExpiresAtSevenMinutes() {
         XCTAssertTrue(WatchGlancePolicy.isFresh(value: 100, date: now.addingTimeInterval(-419), now: now))
         XCTAssertFalse(WatchGlancePolicy.isFresh(value: 100, date: now.addingTimeInterval(-420), now: now))

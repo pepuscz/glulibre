@@ -296,8 +296,16 @@ extension WatchManager: WCSessionDelegate {
     func sessionReachabilityDidChange(_ session: WCSession) {
         if session.isReachable {
             DispatchQueue.main.async {
-                self.sendStateToWatch(forceComplicationUpdate: false)
+                // Rebuild the payload so opening the Watch after an upgrade cannot
+                // resend a snapshot with obsolete visibility preferences.
+                self.processWatchState(forceComplicationUpdate: false)
             }
+        }
+    }
+
+    func sessionWatchStateDidChange(_ session: WCSession) {
+        DispatchQueue.main.async {
+            self.processWatchState(forceComplicationUpdate: false)
         }
     }
 }

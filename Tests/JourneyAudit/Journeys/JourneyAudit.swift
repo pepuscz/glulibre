@@ -269,7 +269,7 @@ final class JourneyAudit: XCTestCase {
 
     func testEveryEverydaySettingsDestination() {
         app.tabBars.buttons["Settings"].tap()
-        for (index, label) in ["Sensor", "Notifications", "Apple Health", "Meal analysis", "Privacy & data", "Other connections", "Saved records", "Help & sensor care"].enumerated() {
+        for (index, label) in ["Sensor", "Notifications", "Apple Watch", "Apple Health", "Meal analysis", "Privacy & data", "Other connections", "Saved records", "Help & sensor care"].enumerated() {
             app.swipeDown()
             XCTAssertTrue(tap(label, scroll: true), label)
             capture("40-\(index)-\(label)")
@@ -297,7 +297,7 @@ final class JourneyAudit: XCTestCase {
         app.tabBars.buttons["Settings"].tap()
         XCTAssertFalse(app.buttons["Advanced"].exists)
         XCTAssertTrue(tap("Other connections", scroll: true))
-        for label in ["Nightscout", "Dexcom Share", "Apple Watch", "Spoken readings", "Calendar", "Contact image", "Reading source"] {
+        for label in ["Nightscout", "Dexcom Share", "Spoken readings", "Calendar", "Contact image", "Reading source"] {
             XCTAssertTrue(tap(label, scroll: true))
             capture("50-\(label)")
             app.swipeUp(); capture("51-\(label)-bottom")
@@ -435,20 +435,40 @@ final class JourneyAudit: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["Today"].isHittable)
     }
 
-    func testWatchConsentCancellation() {
-        app.tabBars.buttons["Settings"].tap()
-        XCTAssertTrue(tap("Other connections", scroll: true))
-        XCTAssertTrue(tap("Apple Watch"))
+    func testWatchSettingsAreDirectAndPreserveChoice() {
+        // Simulator-only reset: tests never modify a physical phone or Watch.
+        app.terminate()
+        app.launchArguments = ["--journal-ui-testing", "--journal-demo", "--journal-watch-default"]
+        app.launch()
+        func openWatchSettings() {
+            XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 15))
+            app.tabBars.buttons["Settings"].tap()
+            XCTAssertTrue(app.buttons["settings.watch"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.buttons["settings.watch"].isHittable)
+            app.buttons["settings.watch"].tap()
+            XCTAssertTrue(app.navigationBars["Apple Watch"].waitForExistence(timeout: 5))
+        }
+        func toggle(_ control: XCUIElement) {
+            let thumb = control.switches.firstMatch
+            if thumb.exists { thumb.tap() } else { control.tap() }
+        }
+        openWatchSettings()
         let control = app.switches["watch.readings"]
         XCTAssertTrue(control.waitForExistence(timeout: 5))
-        // Never enable an external integration as part of a UI test.
-        guard control.value as? String == "0" else { return }
-        let thumb = control.switches.firstMatch
-        if thumb.exists { thumb.tap() } else { control.tap() }
-        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
-        capture("111-watch-consent")
-        XCTAssertTrue(tap("Cancel"))
+        XCTAssertEqual(control.value as? String, "1")
+        capture("111-watch-default-on")
+        toggle(control)
         XCTAssertEqual(control.value as? String, "0")
-        capture("112-watch-cancelled")
+        XCTAssertFalse(app.buttons["Cancel"].exists)
+        app.terminate()
+        app.launchArguments = ["--journal-ui-testing", "--journal-demo"]
+        app.launch()
+        openWatchSettings()
+        XCTAssertEqual(control.value as? String, "0", "An explicit off choice must survive relaunch")
+        capture("112-watch-off-preserved")
+        toggle(control)
+        XCTAssertEqual(control.value as? String, "1")
+        XCTAssertFalse(app.buttons["Cancel"].exists)
+        capture("113-watch-enabled")
     }
 }

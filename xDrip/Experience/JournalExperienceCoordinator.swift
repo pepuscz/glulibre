@@ -86,6 +86,9 @@ final class JournalExperienceCoordinator {
 
     #if targetEnvironment(simulator) && DEBUG
       let arguments = ProcessInfo.processInfo.arguments
+      if JournalModel.isSimulatorUITest && arguments.contains("--journal-watch-default") {
+        UserDefaults.standard.removeObject(forKey: UserDefaults.Key.showDataInWatchComplications.rawValue)
+      }
       if arguments.contains("--journal-rotation-testing") {
         UserDefaults.standard.allowScreenRotation = true
       }

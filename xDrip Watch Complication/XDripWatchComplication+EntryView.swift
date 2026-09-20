@@ -25,11 +25,18 @@ extension XDripWatchComplication {
             fresh ? WatchGlancePolicy.valueText(entry.widgetState.bgValueInMgDl, isMgDl: entry.widgetState.isMgDl) : "—"
         }
         private var status: String {
-            if !entry.widgetState.liveDataIsEnabled { return "Open iPhone app" }
+            if !entry.widgetState.liveDataIsEnabled { return "Hidden on watch face" }
             if entry.widgetState.bgReadingDate == nil { return "Waiting for data" }
             return fresh ? entry.widgetState.bgUnitString : "Out of date"
         }
         private var arrow: String { fresh ? WatchGlancePolicy.trendSymbol(entry.widgetState.slopeOrdinal) : "" }
+        private var unavailableLabel: String {
+            WatchGlancePolicy.unavailableLabel(enabled: entry.widgetState.liveDataIsEnabled,
+                value: entry.widgetState.bgValueInMgDl, date: entry.widgetState.bgReadingDate, now: entry.date)
+        }
+        private var statusSymbol: String {
+            !entry.widgetState.liveDataIsEnabled ? "eye.slash" : fresh ? "drop.fill" : "clock.badge.exclamationmark"
+        }
         
         var body: some View {
             Group {
@@ -40,7 +47,7 @@ extension XDripWatchComplication {
                             Text(value).font(.title2.weight(.semibold)).monospacedDigit()
                             Text(arrow).font(.title3)
                             Spacer(minLength: 0)
-                            Image(systemName: fresh ? "drop.fill" : "clock.badge.exclamationmark")
+                            Image(systemName: statusSymbol)
                                 .widgetAccentable()
                         }
                         Text(status).font(.caption)
@@ -51,9 +58,9 @@ extension XDripWatchComplication {
                     }
                 case .accessoryCircular:
                     VStack(spacing: 0) {
-                        Image(systemName: fresh ? "drop.fill" : "clock.badge.exclamationmark").font(.caption2).widgetAccentable()
+                        Image(systemName: statusSymbol).font(.caption2).widgetAccentable()
                         Text(value).font(.system(.title3, design: .rounded).weight(.semibold)).minimumScaleFactor(0.7)
-                        Text(fresh ? arrow : "Sync").font(.caption2)
+                        Text(fresh ? arrow : unavailableLabel).font(.caption2)
                     }
                 case .accessoryCorner:
                     Text(value).font(.title3.weight(.semibold))

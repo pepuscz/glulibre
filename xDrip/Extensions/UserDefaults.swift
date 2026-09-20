@@ -1975,10 +1975,10 @@ extension UserDefaults {
     
     // MARK: - Apple Watch
     
-    /// enable the Watch complications, default false
+    /// Show readings in a user-added complication unless explicitly switched off.
     @objc dynamic var showDataInWatchComplications: Bool {
         get {
-            return bool(forKey: Key.showDataInWatchComplications.rawValue)
+            return WatchGlancePolicy.showsReadings(savedValue: object(forKey: Key.showDataInWatchComplications.rawValue) as? Bool)
         }
         set {
             set(newValue, forKey: Key.showDataInWatchComplications.rawValue)

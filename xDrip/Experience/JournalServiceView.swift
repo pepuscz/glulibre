@@ -19,13 +19,6 @@ final class JournalServiceAdapter: ObservableObject {
     model.storeSectionReloadClosure { [weak self] in self?.refresh() }
   }
   func refresh() { objectWillChange.send() }
-  func requestWatchConsent() {
-    guard case .askConfirmation(_, _, let confirm, _) = model.onRowSelect(index: 0) else { return }
-    action = .askConfirmation(
-      title: "Enable Watch readings?",
-      message: "Watch face readings can be delayed. Check the timestamp and open the iPhone app for the latest available reading. Don’t use a complication for treatment decisions.",
-      actionHandler: confirm, cancelHandler: nil)
-  }
   func select(_ index: Int) {
     let selection = model.onRowSelect(index: index)
     switch selection {
@@ -61,61 +54,38 @@ struct JournalServiceView: View {
   }
   var body: some View {
     Form {
-      if adapter.model is SettingsViewAppleWatchSettingsViewModel {
-        Section {
-          Toggle(
-            "Watch face readings",
-            isOn: Binding(
-              get: { UserDefaults.standard.showDataInWatchComplications },
-              set: { enabled in
-                if enabled {
-                  adapter.requestWatchConsent()
-                } else {
-                  UserDefaults.standard.showDataInWatchComplications = false
-                  UserDefaults.standard.watchComplicationUserAgreementDate = nil
+      Section {
+        ForEach(0..<adapter.model.numberOfRows(), id: \.self) { index in
+          if let control = adapter.model.uiView(index: index) as? UISwitch {
+            Toggle(
+              adapter.model.settingsRowText(index: index),
+              isOn: Binding(
+                get: { control.isOn },
+                set: {
+                  control.setOn($0, animated: false)
+                  control.sendActions(for: .valueChanged)
                   adapter.refresh()
+                })
+            )
+            .disabled(!adapter.model.isEnabled(index: index))
+          } else {
+            Button {
+              adapter.select(index)
+            } label: {
+              HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                  Text(adapter.model.settingsRowText(index: index)).foregroundStyle(.primary)
+                  if let detail = adapter.model.detailedText(index: index), !detail.isEmpty {
+                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                  }
                 }
-              })
-          ).accessibilityIdentifier("watch.readings")
-        } footer: {
-          Text(
-            "Watch complications may show an older reading. Check the timestamp; open the iPhone app for the latest available data."
-          )
-        }
-      } else {
-        Section {
-          ForEach(0..<adapter.model.numberOfRows(), id: \.self) { index in
-            if let control = adapter.model.uiView(index: index) as? UISwitch {
-              Toggle(
-                adapter.model.settingsRowText(index: index),
-                isOn: Binding(
-                  get: { control.isOn },
-                  set: {
-                    control.setOn($0, animated: false)
-                    control.sendActions(for: .valueChanged)
-                    adapter.refresh()
-                  })
-              )
-              .disabled(!adapter.model.isEnabled(index: index))
-            } else {
-              Button {
-                adapter.select(index)
-              } label: {
-                HStack {
-                  VStack(alignment: .leading, spacing: 4) {
-                    Text(adapter.model.settingsRowText(index: index)).foregroundStyle(.primary)
-                    if let detail = adapter.model.detailedText(index: index), !detail.isEmpty {
-                      Text(detail).font(.subheadline).foregroundStyle(.secondary)
-                    }
-                  }
-                  Spacer(minLength: 12)
-                  if adapter.model.accessoryType(index: index) != .none {
-                    Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                      .foregroundStyle(.tertiary).accessibilityHidden(true)
-                  }
-                }.padding(.vertical, 3)
-              }.disabled(!adapter.model.isEnabled(index: index) || adapter.progress != nil)
-            }
+                Spacer(minLength: 12)
+                if adapter.model.accessoryType(index: index) != .none {
+                  Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary).accessibilityHidden(true)
+                }
+              }.padding(.vertical, 3)
+            }.disabled(!adapter.model.isEnabled(index: index) || adapter.progress != nil)
           }
         }
       }

@@ -19,6 +19,11 @@ final class JournalPreferences: ObservableObject {
     func setUsesMgDl(_ value: Bool) { UserDefaults.standard.bloodGlucoseUnitIsMgDl = value; objectWillChange.send() }
     var readingBadge: Bool { UserDefaults.standard.showReadingInAppBadge }
     func setReadingBadge(_ value: Bool) { UserDefaults.standard.showReadingInAppBadge = value; objectWillChange.send() }
+    var watchFaceReadings: Bool { UserDefaults.standard.showDataInWatchComplications }
+    func setWatchFaceReadings(_ value: Bool) {
+        UserDefaults.standard.showDataInWatchComplications = value
+        objectWillChange.send()
+    }
     var glucoseToHealth: Bool { UserDefaults.standard.storeReadingsInHealthkit }
     var mealsToHealth: Bool { MealAISettings.writeConfirmedMealsToHealthKit }
     func setMealsToHealth(_ value: Bool) { MealAISettings.writeConfirmedMealsToHealthKit = value; objectWillChange.send() }

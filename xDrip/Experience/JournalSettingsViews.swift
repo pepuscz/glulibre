@@ -19,6 +19,9 @@ struct JournalSettingsView: View {
                     } label: { settingsRow("Notifications", subtitle: "Glucose alerts & visibility", icon: "bell.badge", color: .orange) }
                 }
                 Section("Connected services") {
+                    NavigationLink { JournalWatchSettingsView(preferences: preferences) } label: {
+                        settingsRow("Apple Watch", subtitle: "Glucose & trend on your watch face", icon: "applewatch", color: JournalStyle.accent)
+                    }.accessibilityIdentifier("settings.watch")
                     NavigationLink { JournalHealthSettingsView(preferences: preferences) } label: {
                         settingsRow("Apple Health", subtitle: "Choose what to share", icon: "heart.fill", color: .pink)
                     }
@@ -49,7 +52,7 @@ struct JournalSettingsView: View {
     private var connections: some View {
         List {
             Section {
-                ForEach([JournalService.nightscout, .dexcom, .watch]) { service in serviceLink(service) }
+                ForEach([JournalService.nightscout, .dexcom]) { service in serviceLink(service) }
             } header: { Text("Share readings") } footer: { Text("Existing connections keep working. Opening a service doesn’t enable sharing.") }
             Section("Accessibility & displays") {
                 ForEach([JournalService.speech, .calendar, .contact]) { service in serviceLink(service) }
@@ -85,6 +88,20 @@ struct JournalSettingsView: View {
                 Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
             }.padding(.vertical, 4)
         }
+    }
+}
+
+struct JournalWatchSettingsView: View {
+    @ObservedObject var preferences: JournalPreferences
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Show glucose", isOn: Binding(get: { preferences.watchFaceReadings }, set: preferences.setWatchFaceReadings))
+                    .accessibilityIdentifier("watch.readings")
+            } header: { Text("Watch face") } footer: {
+                Text("Your latest reading and trend. Readings can be delayed; out-of-date values are hidden.")
+            }
+        }.navigationTitle("Apple Watch").navigationBarTitleDisplayMode(.inline)
     }
 }
 

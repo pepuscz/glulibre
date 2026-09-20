@@ -64,6 +64,20 @@ struct WatchMealSnapshot: Codable, Equatable {
 enum WatchGlancePolicy {
     static let freshInterval: TimeInterval = 7 * 60
 
+    /// Adding our complication should show glucose without a second hidden opt-in.
+    /// A deliberately saved off choice always wins, including after an upgrade.
+    static func showsReadings(savedValue: Bool?) -> Bool { savedValue ?? true }
+
+    /// Never imply that synchronization is running when readings are simply hidden
+    /// or unavailable. Stale values stay hidden; only their age is shown.
+    static func unavailableLabel(enabled: Bool, value: Double?, date: Date?, now: Date) -> String {
+        guard enabled else { return "Off" }
+        guard let value, value.isFinite, value > 12, let date,
+              date.timeIntervalSince1970.isFinite, date <= now else { return "—" }
+        guard !isFresh(value: value, date: date, now: now) else { return "" }
+        return ageText(date: date, now: now).replacingOccurrences(of: " ago", with: "")
+    }
+
     static func timelineDates(readingDate: Date?, now: Date) -> [Date] {
         guard let readingDate, readingDate.timeIntervalSince1970.isFinite, readingDate <= now else { return [now] }
         let expiry = readingDate.addingTimeInterval(freshInterval)
