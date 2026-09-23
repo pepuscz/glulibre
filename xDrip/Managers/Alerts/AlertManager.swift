@@ -58,6 +58,7 @@ public class AlertManager: NSObject {
     
     /// constant for key in ApplicationManager.shared.addClosureToRunWhenAppWillEnterForeground - for closure that will stop playing sound
     private let applicationManagerKeyStopPlayingSound = "AlertManager-stopplayingsound"
+    private var missedReadingGeneration = 0
     
     // MARK: - initializer
     
@@ -90,15 +91,17 @@ public class AlertManager: NSObject {
         UNUserNotificationCenter.current().getNotificationCategories(completionHandler: setAlertNotificationCategories(_:))
         
         // alertManager may have raised an alert with a sound played by soundplayer. If user brings the app to the foreground, the soundPlayer needs to stop playing
-        ApplicationManager.shared.addClosureToRunWhenAppWillEnterForeground(key: applicationManagerKeyStopPlayingSound, closure: {
+        ApplicationManager.shared.addClosureToRunWhenAppWillEnterForeground(key: applicationManagerKeyStopPlayingSound, closure: { [weak self] in
             if let soundPlayer = soundPlayer {
                 soundPlayer.stopPlaying()
             }
+            self?.cancelMissedReadingIfStopped()
             
         })
         
         // add observer for changes in UserDefaults
         addObservers()
+        migrateRepeatingMissedReading()
     }
     
     // MARK: - public functions
@@ -110,11 +113,14 @@ public class AlertManager: NSObject {
     ///     - if true then an immediate notification is created (immediate being not a future planned, like missed reading), which contains the bg reading in the text - so there's no need to create an additional notificationwith the text in it
     public func checkAlerts(maxAgeOfLastBgReadingInSeconds: Double) -> Bool {
         // first of all remove all existing notifications, there should be only one open alert on the home screen. The most relevant one will be reraised
-        uNUserNotificationCenter.removeDeliveredNotifications(withIdentifiers: alertNotificationIdentifers)
-        uNUserNotificationCenter.removeAllPendingNotificationRequests()
+        let immediateIdentifiers = alertNotificationIdentifers.filter { $0 != AlertKind.missedreading.notificationIdentifier() }
+        uNUserNotificationCenter.removeDeliveredNotifications(withIdentifiers: immediateIdentifiers)
+        uNUserNotificationCenter.removePendingNotificationRequests(withIdentifiers: immediateIdentifiers)
+        cancelMissedReadingIfStopped()
         
         // check if "Snooze All" is activated. If so, then just return with nothing.
         if let snoozeAllAlertsUntilDate = UserDefaults.standard.snoozeAllAlertsUntilDate, snoozeAllAlertsUntilDate > Date() {
+            cancelMissedReading()
             trace("in checkAlerts, skipping as Snooze All is enabled for the next %{public}@", log: log, category: ConstantsLog.categoryAlertManager, type: .info, snoozeAllAlertsUntilDate.daysAndHoursRemaining())
             return false
         }
@@ -219,14 +225,8 @@ public class AlertManager: NSObject {
                 case UNNotificationDismissActionIdentifier:
                     trace("in userNotificationCenter, received actionIdentifier : UNNotificationDismissActionIdentifier", log: log, category: ConstantsLog.categoryAlertManager, type: .info)
                     
-                    // user is swiping away the notification without opening the app, and not choosing the snooze option even if there would be an option to snooze
-                    // if it's a reading alert (low, high, ...) then it will go off again in 5 minutes
-                    // if it's a missed reading alert, let's replan it in 5 minutes
-                    if alertKind == .missedreading {
-                        snooze(alertKind: .missedreading, snoozePeriodInMinutes: 5, response: response)
-                        // save changes in coredata
-                        coreDataManager.saveChanges()
-                    }
+                    // Dismiss is not a request for another connection-loss reminder.
+                    // Glucose alert eligibility and cooldowns remain unchanged.
 
                 default:
                     
@@ -411,6 +411,8 @@ public class AlertManager: NSObject {
                     
                     // if missedReadingAlertChanged didn't change to true then no further processing
                     guard UserDefaults.standard.missedReadingAlertChanged else { return }
+                    cancelMissedReading()
+                    UserDefaults.standard.removeObject(forKey: MissingReadingPolicy.anchorKey)
                     
                     // user changed a missed reading alert setting, so we're going to call checkAlertAndFire for .missedreading, which will replan or cancel any existing missed reading alert
                     
@@ -460,15 +462,15 @@ public class AlertManager: NSObject {
         return false
     }
     
-    /// will
-    /// - remove any pending missed reading alert
-    /// - create a new one repeating, repeat time will be equal to delay of first alert (that's what iOS allows us to do)
+    /// An explicit Snooze action requests one further reminder, never a loop.
     private func scheduleMissedReadingAlert(snoozePeriodInMinutes: Int, content: UNNotificationContent) {
+        guard !cancelMissedReadingIfStopped() else { return }
+        missedReadingGeneration += 1
         // remove any planned missed reading alerts
         uNUserNotificationCenter.removePendingNotificationRequests(withIdentifiers: [AlertKind.missedreading.notificationIdentifier()])
         
         // replan missed reading alert, repeating with delay of snoozePeriodInMinutes
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(Double(snoozePeriodInMinutes) * 60.0), repeats: true)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, Double(snoozePeriodInMinutes) * 60), repeats: false)
         
         // create the notificationrequest
         let notificationRequest = UNNotificationRequest(identifier: AlertKind.missedreading.notificationIdentifier(), content: content, trigger: trigger)
@@ -480,11 +482,68 @@ public class AlertManager: NSObject {
             }
         }
         
-        trace("Scheduled missed reading alert with delay (and repeat) %{public}@ minutes", log: log, category: ConstantsLog.categoryAlertManager, type: .info, snoozePeriodInMinutes.description)
+        trace("Scheduled one missed reading reminder after %{public}@ minutes", log: log, category: ConstantsLog.categoryAlertManager, type: .info, snoozePeriodInMinutes.description)
+    }
+
+    public func cancelMissedReading() {
+        missedReadingGeneration += 1
+        let identifiers = [AlertKind.missedreading.notificationIdentifier()]
+        uNUserNotificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
+        uNUserNotificationCenter.removeDeliveredNotifications(withIdentifiers: identifiers)
+    }
+
+    @discardableResult private func cancelMissedReadingIfStopped() -> Bool {
+        guard UserDefaults.standard.isMaster, sensorsAccessor.fetchActiveSensor() == nil else { return false }
+        cancelMissedReading()
+        return true
+    }
+
+    /// Replace a timer installed by an older build. Never overwrite a request
+    /// scheduled by a newer reading while these asynchronous queries are running.
+    private func migrateRepeatingMissedReading() {
+        guard !cancelMissedReadingIfStopped() else { return }
+        let generation = missedReadingGeneration
+        let identifier = AlertKind.missedreading.notificationIdentifier()
+        uNUserNotificationCenter.getPendingNotificationRequests { [weak self] requests in
+            guard let request = requests.first(where: { $0.identifier == identifier }),
+                  let trigger = request.trigger as? UNTimeIntervalNotificationTrigger, trigger.repeats else { return }
+            self?.uNUserNotificationCenter.getDeliveredNotifications { [weak self] delivered in
+                DispatchQueue.main.async {
+                    guard let self, self.missedReadingGeneration == generation,
+                          !self.cancelMissedReadingIfStopped() else { return }
+                    self.missedReadingGeneration += 1
+                    self.uNUserNotificationCenter.removePendingNotificationRequests(withIdentifiers: [identifier])
+                    trace("Missed-reading upgrade: repeating request removed", log: self.log, category: ConstantsLog.categoryAlertManager, type: .info)
+                    if let reading = self.bgReadingsAccessor.get2LatestBgReadings(minimumTimeIntervalInMinutes: 4).first {
+                        UserDefaults.standard.set(reading.timeStamp, forKey: MissingReadingPolicy.anchorKey)
+                    }
+                    let delay = MissingReadingPolicy.legacyDelay(
+                        alreadyDelivered: delivered.contains { $0.request.identifier == identifier },
+                        nextFire: trigger.nextTriggerDate(), now: Date())
+                    guard let delay else {
+                        trace("Missed-reading upgrade: episode already delivered; no further reminder", log: self.log, category: ConstantsLog.categoryAlertManager, type: .info)
+                        return
+                    }
+                    self.uNUserNotificationCenter.add(UNNotificationRequest(identifier: identifier,
+                        content: request.content,
+                        trigger: UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false)))
+                }
+            }
+        }
     }
     
     /// will check if the alert of type alertKind needs to be fired and also fires it, plays the sound, and if yes returns true, otherwise false
     private func checkAlertAndFire(alertKind: AlertKind, lastBgReading: BgReading?, lastButOneBgReading: BgReading?, lastCalibration: Calibration?, transmitterBatteryInfo: TransmitterBatteryInfo?) -> Bool {
+        if alertKind == .missedreading {
+            guard !cancelMissedReadingIfStopped(), let reading = lastBgReading,
+                  MissingReadingPolicy.shouldArm(readingAt: reading.timeStamp,
+                    armedAt: UserDefaults.standard.object(forKey: MissingReadingPolicy.anchorKey) as? Date,
+                    now: Date(), isMaster: UserDefaults.standard.isMaster,
+                    hasActiveSensor: sensorsAccessor.fetchActiveSensor() != nil) else { return false }
+            // Recovery clears the previous episode even when the next schedule
+            // period is disabled. Do not leave its older timer armed.
+            cancelMissedReading()
+        }
         /// This is only for missed reading alert. How many minutes between now and the moment the snooze expires (meaning when is it not snoozed anymore)
         ///
         /// will be initialized later
@@ -706,9 +765,13 @@ public class AlertManager: NSObject {
             
             // create the trigger, only for notifications with delay
             var trigger: UNTimeIntervalNotificationTrigger?
-            if delayInSecondsToUse > 0 {
-                // set repeats to true
-                trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(Double(delayInSecondsToUse)), repeats: true)
+            if alertKind == .missedreading {
+                missedReadingGeneration += 1
+                UserDefaults.standard.set(lastBgReading?.timeStamp, forKey: MissingReadingPolicy.anchorKey)
+                uNUserNotificationCenter.removeDeliveredNotifications(withIdentifiers: [alertKind.notificationIdentifier()])
+                trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, Double(delayInSecondsToUse)), repeats: false)
+            } else if delayInSecondsToUse > 0 {
+                trigger = UNTimeIntervalNotificationTrigger(timeInterval: Double(delayInSecondsToUse), repeats: true)
             }
             
             // create the notificationrequest
@@ -717,6 +780,13 @@ public class AlertManager: NSObject {
             // Add Request to User Notification Center
             uNUserNotificationCenter.add(notificationRequest) { error in
                 if let error = error {
+                    if alertKind == .missedreading {
+                        DispatchQueue.main.async {
+                            if UserDefaults.standard.object(forKey: MissingReadingPolicy.anchorKey) as? Date == lastBgReading?.timeStamp {
+                                UserDefaults.standard.removeObject(forKey: MissingReadingPolicy.anchorKey)
+                            }
+                        }
+                    }
                     trace("Unable to Add Notification Request %{public}@", log: self.log, category: ConstantsLog.categoryAlertManager, type: .error, error.localizedDescription)
                 }
             }

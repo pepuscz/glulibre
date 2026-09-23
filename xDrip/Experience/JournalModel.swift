@@ -101,12 +101,7 @@ final class JournalModel: ObservableObject {
     }
 
     private func rebuildFoodGroups() {
-        foodGroups = FoodResponseCore.groups(meals: meals.map { meal in
-            FoodResponseInput(id: meal.id, date: meal.eatenAt, timeZone: meal.timeZoneIdentifier, title: meal.displayTitle,
-                components: meal.foodItems.map {
-                    FoodComponent(name: $0.name, portion: $0.portion, confidence: $0.confidence, evidence: $0.foodEvidence)
-                }, separate: meal.keepResponseSeparate == true)
-        }, points: foodPoints, now: now)
+        foodGroups = FoodResponseCore.groups(meals: meals.map(\.responseInput), points: foodPoints, now: now)
     }
 
     #if targetEnvironment(simulator) && DEBUG
@@ -132,6 +127,18 @@ final class JournalModel: ObservableObject {
                     return JournalGlucosePoint(date: meal.eatenAt.addingTimeInterval(Double(minute * 60)), mgDl: 95 + delta, sensorID: "synthetic-food-preview")
                 }
             }
+        }
+        if ProcessInfo.processInfo.arguments.contains("--food-occasions"), let first = examples.first {
+            var course = first
+            course.id = UUID(uuidString: "10000000-0000-0000-0000-000000000001")!
+            course.eatenAt = first.eatenAt.addingTimeInterval(600)
+            course.analysis?.title = "Toast course"
+            course.analysis?.items = [MealFoodItem(name: "Toast", portion: "1 slice", nutrients: .empty, confidence: 0.9, evidence: "Synthetic preview")]
+            var snack = course
+            snack.id = UUID(uuidString: "10000000-0000-0000-0000-000000000002")!
+            snack.eatenAt = first.eatenAt.addingTimeInterval(3600)
+            snack.analysis?.title = "Later snack"
+            examples += [course, snack]
         }
         meals = examples
         foodPoints = samples.sorted { $0.date < $1.date }
@@ -159,9 +166,17 @@ final class JournalModel: ObservableObject {
         return minutes == 0 ? "Updated just now" : "Last reading \(minutes) min ago"
     }
     func observation(for meal: MealRecord) -> GlucoseObservations.MealObservation {
-        GlucoseObservations.meal(at: meal.eatenAt, otherMealDates: meals.filter { $0.id != meal.id }.map(\.eatenAt), points: mealPoints(for: meal), now: now)
+        let occasion = occasion(for: meal)
+        let others = FoodResponseCore.occasions(meals: meals.map(\.responseInput), now: now)
+            .filter { $0.id != occasion.id }.map(\.date)
+        return GlucoseObservations.meal(at: occasion.date, otherMealDates: others, points: mealPoints(for: meal), now: now)
+    }
+    func occasion(for meal: MealRecord) -> MealOccasion {
+        FoodResponseCore.occasions(meals: meals.map(\.responseInput), now: now)
+            .first { $0.meals.contains { $0.id == meal.id } } ?? MealOccasion(meals: [meal.responseInput])
     }
     func mealPoints(for meal: MealRecord) -> [JournalGlucosePoint] {
-        FoodResponseCore.slice(foodPoints, from: meal.eatenAt.addingTimeInterval(-15 * 60), through: meal.eatenAt.addingTimeInterval(7200))
+        let start = occasion(for: meal).date
+        return FoodResponseCore.slice(foodPoints, from: start.addingTimeInterval(-900), through: start.addingTimeInterval(7200))
     }
 }

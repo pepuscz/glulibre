@@ -16,7 +16,7 @@ struct FoodComponent: Equatable {
     var evidence: FoodEvidence?
 }
 
-struct FoodResponseInput {
+struct FoodResponseInput: Identifiable {
     let id: UUID
     let date: Date
     let timeZone: String
@@ -35,6 +35,9 @@ struct FoodResponse: Identifiable {
     let area: Double?
     let trace: [JournalGlucosePoint]
     let limitation: String?
+    var mealIDs: [UUID] = []
+    /// Descriptive only; not eligible for aggregation if another occasion overlaps.
+    var observedRise: Double? = nil
     var usable: Bool { limitation == nil && rise != nil && area != nil }
 }
 
@@ -44,6 +47,7 @@ struct FoodResponseGroup: Identifiable {
     let components: [FoodComponent]
     var responses: [FoodResponse]
     var usable: [FoodResponse] { responses.filter(\.usable) }
+    var observed: [FoodResponse] { responses.filter { $0.observedRise != nil } }
     var days: Int { Set(usable.map(\.day)).count }
     // A display safeguard, not a clinical confidence threshold or causal conclusion.
     var repeated: Bool { usable.count >= 3 && days >= 3 }
@@ -56,7 +60,37 @@ struct FoodResponseGroup: Identifiable {
     }
 }
 
+/// A rebuildable view over original captures, never a destructive merge.
+struct MealOccasion: Identifiable {
+    let meals: [FoodResponseInput]
+    var id: UUID { meals[0].id }
+    var date: Date { meals[0].date }
+    var input: FoodResponseInput {
+        FoodResponseInput(id: id, date: date, timeZone: meals[0].timeZone,
+            title: meals.map(\.title).joined(separator: " + "),
+            components: meals.contains(where: { $0.components.isEmpty }) ? [] : meals.flatMap(\.components),
+            separate: meals.contains(where: \.separate))
+    }
+}
+
 enum FoodResponseCore {
+    /// A product grouping rule, not a biological cutoff. Anchor to the first
+    /// capture so a chain of snacks cannot swallow the whole day.
+    static let occasionSpan: TimeInterval = 30 * 60
+
+    static func occasions(meals: [FoodResponseInput], now: Date) -> [MealOccasion] {
+        let ordered = meals.filter { $0.date <= now }.sorted {
+            $0.date == $1.date ? $0.id.uuidString < $1.id.uuidString : $0.date < $1.date
+        }
+        var batches: [[FoodResponseInput]] = []
+        for meal in ordered {
+            if let last = batches.last, let first = last.first,
+               !meal.separate, !first.separate, meal.date.timeIntervalSince(first.date) <= occasionSpan {
+                batches[batches.count - 1].append(meal)
+            } else { batches.append([meal]) }
+        }
+        return batches.map { MealOccasion(meals: $0) }
+    }
     static func normalized(_ text: String) -> String {
         text.lowercased(with: Locale(identifier: "en_US_POSIX"))
             .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
@@ -81,15 +115,17 @@ enum FoodResponseCore {
 
     static func groups(meals: [FoodResponseInput], points: [JournalGlucosePoint], now: Date) -> [FoodResponseGroup] {
         let clean = GlucoseObservations.valid(points, now: now)
-        let eligible = meals.filter { $0.date <= now && $0.date >= now.addingTimeInterval(-90 * 86400) }
+        let occasions = occasions(meals: meals, now: now)
+        let eligible = occasions.filter { $0.date >= now.addingTimeInterval(-90 * 86400) }
         var grouped: [String: FoodResponseGroup] = [:]
-        for meal in eligible.sorted(by: { $0.date > $1.date }) {
+        for occasion in eligible.sorted(by: { $0.date > $1.date }) {
+            let meal = occasion.input
             let window = DateInterval(start: meal.date.addingTimeInterval(-15 * 60), end: meal.date.addingTimeInterval(7200))
             let samples = slice(clean, from: window.start, through: window.end.addingTimeInterval(GlucoseObservations.maximumGap))
             let observation = GlucoseObservations.meal(at: meal.date,
-                otherMealDates: meals.filter { $0.id != meal.id }.map(\.date), points: samples, now: now)
+                otherMealDates: occasions.filter { $0.id != meal.id }.map(\.date), points: samples, now: now)
             // Use a wider prior-meal exclusion for cross-meal comparisons than the single-meal view.
-            let nearbyMeal = meals.contains { $0.id != meal.id && $0.date > meal.date.addingTimeInterval(-7200) && $0.date <= window.end }
+            let nearbyMeal = observation.hasNearbyMeal
             let baseline = observation.baseline
             let after = boundedTrace(samples, start: meal.date, end: window.end)
             let edgeMissing = after.first?.date != meal.date
@@ -104,7 +140,7 @@ enum FoodResponseCore {
                 day: "\(day.year ?? 0)-\(day.month ?? 0)-\(day.day ?? 0)", baseline: baseline,
                 rise: limitation == nil ? observation.rise : nil,
                 area: limitation == nil ? baseline.map { positiveArea(after, baseline: $0) } : nil,
-                trace: after, limitation: limitation)
+                trace: after, limitation: limitation, mealIDs: occasion.meals.map(\.id), observedRise: observation.rise)
             let key = key(for: meal)
             if grouped[key] != nil { grouped[key]?.responses.append(response) }
             else { grouped[key] = FoodResponseGroup(id: key, title: meal.title, components: meal.components, responses: [response]) }

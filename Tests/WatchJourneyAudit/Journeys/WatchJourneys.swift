@@ -38,6 +38,21 @@ final class WatchJourneys: XCTestCase {
         XCTAssertTrue(app.staticTexts["watch.glucose"].isHittable)
     }
 
+    func testOverlappingMealStillShowsObservedRise() {
+        let app = XCUIApplication(bundleIdentifier: "com.652PWHFDA9.libredebug.watchkitapp")
+        app.launchArguments = ["--watch-demo", "--watch-meal", "--watch-overlap"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Avocado toast"].waitForExistence(timeout: 15))
+        for _ in 0..<3 {
+            if app.staticTexts["Overlapping meals"].isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(app.staticTexts["Peak rise · 2 hours"].exists)
+        XCTAssertTrue(app.staticTexts["Overlapping meals"].isHittable)
+        XCTAssertFalse(app.staticTexts["Response unavailable"].exists)
+        capture("Overlapping-meal-observed-rise", app: app)
+    }
+
     func testDigitalCrownScrollsMealAndReturnsToGlucose() {
         let app = XCUIApplication(bundleIdentifier: "com.652PWHFDA9.libredebug.watchkitapp")
         for (name, flags) in [("Standard", [String]()), ("Large-long-meal", ["--watch-large", "--watch-long-meal"])] {

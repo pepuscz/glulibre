@@ -115,7 +115,7 @@ final class WatchStateModel: NSObject, ObservableObject {
                 : "Avocado toast"
             lastMeal = WatchMealSnapshot(title: title, eatenAt: now.addingTimeInterval(collecting ? -3600 : -9000).timeIntervalSince1970,
                 state: collecting ? "collecting" : limited ? "limited" : "ready", riseMgDl: collecting || limited ? nil : 35,
-                detail: limited ? "Another logged meal overlaps this window." : "Observed after this meal")
+                detail: limited ? "Not enough sensor readings." : arguments.contains("--watch-overlap") ? "Overlapping meals" : "Observed after this meal")
         }
         liveDataIsEnabled = true
         syncStatus = "Simulator sample · not sensor data"

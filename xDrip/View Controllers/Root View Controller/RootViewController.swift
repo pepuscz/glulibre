@@ -3371,6 +3371,7 @@ final class RootViewController: UIViewController, ObservableObject {
     }
     
     private func stopSensor(cGMTransmitter: CGMTransmitter?, sendToTransmitter: Bool) {
+        if UserDefaults.standard.isMaster { alertManager?.cancelMissedReading() }
         // create stopDate
         let stopDate = Date()
         

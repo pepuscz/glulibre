@@ -88,6 +88,7 @@ enum GlucoseObservations {
         let baseline: Double?
         let peak: Double?
         let limitation: String?
+        let hasNearbyMeal: Bool
         var rise: Double? {
             guard limitation == nil, let baseline, let peak else { return nil }
             return peak - baseline
@@ -114,11 +115,11 @@ enum GlucoseObservations {
             limitation = "The data source does not identify the sensor. Sensor continuity cannot be checked for this observation."
         } else if coverage < 0.7 {
             limitation = "Too many missing readings for a reliable two-hour observation."
-        } else if otherMealDates.contains(where: { $0 >= date.addingTimeInterval(-15 * 60) && $0 <= interval.end }) {
-            limitation = "Another logged meal overlaps this window. The response cannot be separated."
         } else {
             limitation = nil
         }
-        return MealObservation(interval: interval, coverage: coverage, baseline: baseline, peak: peak, limitation: limitation)
+        let nearby = otherMealDates.contains { $0 <= now && $0 > date.addingTimeInterval(-7200) && $0 <= interval.end }
+        return MealObservation(interval: interval, coverage: coverage, baseline: baseline, peak: peak,
+                               limitation: limitation, hasNearbyMeal: nearby)
     }
 }

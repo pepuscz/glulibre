@@ -1,5 +1,22 @@
 import Foundation
 
+/// Connection loss is one episode until a newer reading arrives. This policy
+/// never changes low/high glucose alerts or the user's configured delay.
+enum MissingReadingPolicy {
+    static let anchorKey = "Journal.missedReading.armedReadingAt"
+
+    static func shouldArm(readingAt: Date, armedAt: Date?, now: Date,
+                          isMaster: Bool, hasActiveSensor: Bool) -> Bool {
+        guard !isMaster || hasActiveSensor, readingAt <= now else { return false }
+        return armedAt.map { readingAt > $0 } ?? true
+    }
+
+    static func legacyDelay(alreadyDelivered: Bool, nextFire: Date?, now: Date) -> TimeInterval? {
+        guard !alreadyDelivered, let nextFire else { return nil }
+        return max(1, nextFire.timeIntervalSince(now))
+    }
+}
+
 /// Routine updates only. Clinical and connection alarms never pass through this policy.
 enum ReadingNotificationPolicy {
     static let enabledKey = "showReadingInNotification" // Legacy storage is inverted.

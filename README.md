@@ -42,7 +42,7 @@ For personal observation, not diagnosis or medication decisions. Comparisons con
 
 ## Open source
 
-Modified fork of [xDrip4iOS](https://github.com/JohanDegraeve/xdripswift) by Johan Degraeve and contributors. Changes: 24 August–20 September 2026. [GPL-3.0-or-later](LICENSE), without warranty. [Full notices](NOTICE.md).
+Modified fork of [xDrip4iOS](https://github.com/JohanDegraeve/xdripswift) by Johan Degraeve and contributors. Changes: 24 August–23 September 2026. [GPL-3.0-or-later](LICENSE), without warranty. [Full notices](NOTICE.md).
 
 This product includes software developed by the "Marcin Krzyzanowski" (http://krzyzanowskim.com/). Legacy icons: [Icons8](https://icons8.com/).
 

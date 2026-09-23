@@ -90,6 +90,13 @@ struct MealRecord: Codable {
 
     var foodItems: [MealFoodItem] { userFoodItems ?? analysis?.items ?? [] }
 
+    var responseInput: FoodResponseInput {
+        FoodResponseInput(id: id, date: eatenAt, timeZone: timeZoneIdentifier, title: displayTitle,
+            components: foodItems.map {
+                FoodComponent(name: $0.name, portion: $0.portion, confidence: $0.confidence, evidence: $0.foodEvidence)
+            }, separate: keepResponseSeparate == true)
+    }
+
     var displayTitle: String {
         if let name = userMealName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
         if let title = analysis?.title.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {

@@ -432,6 +432,28 @@ final class JourneyAudit: XCTestCase {
         capture("110-alarm-opens-chart")
     }
 
+    func testMultiCourseMealKeepsObservedCurveWithOverlap() {
+        app.terminate()
+        app.launchArguments = ["--journal-ui-testing", "--food-preview", "--food-occasions", "--food-occasion-detail"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Meal"].waitForExistence(timeout: 20))
+        func reveal(_ label: String) {
+            for _ in 0..<8 {
+                if app.staticTexts[label].firstMatch.exists && app.staticTexts[label].firstMatch.isHittable { return }
+                app.swipeUp()
+            }
+        }
+        reveal("Together at this meal")
+        XCTAssertTrue(app.staticTexts["Together at this meal"].exists)
+        XCTAssertTrue(app.staticTexts["Toast course"].exists)
+        capture("meal-occasion-courses")
+        reveal("Observed peak")
+        XCTAssertTrue(app.staticTexts["Observed peak"].exists)
+        XCTAssertTrue(app.staticTexts["Overlapping meals"].exists)
+        XCTAssertFalse(app.staticTexts["Another logged meal overlaps this window. The response cannot be separated."].exists)
+        capture("meal-occasion-observed-overlap")
+    }
+
     func testForegroundAlarmDoesNotInterruptMealCapture() {
         app.terminate()
         app.launchArguments = ["--journal-ui-testing", "--journal-demo", "--journal-alarm-foreground"]

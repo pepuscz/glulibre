@@ -96,6 +96,9 @@ struct WatchMealView: View {
             Text(state.bgUnitString()).font(.caption2).foregroundStyle(.secondary)
           }
           Text("Peak rise · 2 hours").font(.caption).foregroundStyle(.secondary)
+          if meal.detail == "Overlapping meals" {
+            Label("Overlapping meals", systemImage: "fork.knife").font(.caption2).foregroundStyle(.secondary)
+          }
         } else if meal.state == "collecting" {
           let elapsed = max(0, now.timeIntervalSince1970 - meal.eatenAt)
           if elapsed < 7200 {

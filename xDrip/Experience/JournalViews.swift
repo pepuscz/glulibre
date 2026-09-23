@@ -623,9 +623,22 @@ struct JournalMealDetailContent: View {
 
     private func response(_ meal: MealRecord) -> some View {
         let observation = model.observation(for: meal)
-        let window = DateInterval(start: meal.eatenAt.addingTimeInterval(-15 * 60), end: observation.interval.end)
+        let occasion = model.occasion(for: meal)
+        let window = DateInterval(start: observation.interval.start.addingTimeInterval(-15 * 60), end: observation.interval.end)
         return JournalCard {
-            Label("After this meal", systemImage: "waveform.path").font(.headline)
+            Label(occasion.meals.count > 1 ? "Together at this meal" : "After this meal", systemImage: "waveform.path").font(.headline)
+            if occasion.meals.count > 1 {
+                ForEach(occasion.meals) { capture in
+                    if let original = model.meals.first(where: { $0.id == capture.id }) {
+                        HStack {
+                            FoodPhoto(meal: original).frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 8))
+                            Text(original.displayTitle).font(.subheadline).lineLimit(2)
+                            Spacer()
+                            Text(original.eatenAt, style: .time).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
             Text("15 minutes before · 2 hours after").font(.caption).foregroundStyle(.secondary)
             if meal.eatenAt < model.now.addingTimeInterval(-90 * 86400) {
                 Text("This meal is outside the 90-day comparison window. Your original records are still saved.").font(.footnote).foregroundStyle(.secondary)
@@ -634,6 +647,9 @@ struct JournalMealDetailContent: View {
                 mealBaseline: observation.limitation == nil ? observation.baseline : nil,
                 mealPeak: observation.limitation == nil ? model.mealPoints(for: meal).filter { observation.interval.contains($0.date) }.max(by: { $0.mgDl < $1.mgDl }) : nil)
             LabeledContent("Glucose coverage", value: "\(Int(observation.coverage * 100))%")
+            if observation.hasNearbyMeal {
+                Label("Overlapping meals", systemImage: "fork.knife").font(.caption).foregroundStyle(.secondary)
+            }
             if let limitation = observation.limitation {
                 Label(limitation, systemImage: "info.circle").font(.subheadline).foregroundStyle(.secondary)
             } else if let baseline = observation.baseline, let peak = observation.peak {
@@ -644,7 +660,12 @@ struct JournalMealDetailContent: View {
                 }
             }
             DisclosureGroup("About this observation") {
-                Text("This curve does not establish what caused a change. Activity, sleep, portions, and sensor variation also matter. One meal is not a food score.").font(.footnote).foregroundStyle(.secondary)
+                Text("Photos within 30 minutes of the first share one window. Other nearby meals stay on the chart; their effects cannot be separated. This is an observed curve, not a food score.").font(.footnote).foregroundStyle(.secondary)
+                Button(meal.keepResponseSeparate == true ? "Group with nearby photos" : "Keep this photo separate") {
+                    do {
+                        _ = try MealStore.shared.update(id: meal.id) { $0.keepResponseSeparate = meal.keepResponseSeparate != true }
+                    } catch { analysisError = error.localizedDescription }
+                }
             }
         }
     }

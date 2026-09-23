@@ -132,6 +132,10 @@ final class JournalExperienceCoordinator {
         } catch { assertionFailure(error.localizedDescription) }
       }
       if args.contains("--journal-alerts") { showNotifications() }
+      if args.contains("--food-occasion-detail"), let meal = JournalModel.shared.meals.first {
+        presenter?.present(UIHostingController(rootView: JournalMealDetail(
+            model: .shared, mealID: meal.id, edit: { [weak self] in self?.edit($0) })), animated: false)
+      }
       if args.contains("--journal-alarm-response") {
         showSettings()
         root?.auditAlarmInteractions(openToday: true)

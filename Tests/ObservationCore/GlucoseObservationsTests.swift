@@ -78,10 +78,13 @@ final class GlucoseObservationsTests: XCTestCase {
         XCTAssertNil(meal(unknown).rise)
         XCTAssertTrue(meal(unknown).limitation?.contains("continuity") == true)
     }
-    func testOverlappingMealAndSimultaneousMealAreExcluded() {
-        XCTAssertNil(meal(complete, others: [point(60).date]).rise)
-        XCTAssertNil(meal(complete, others: [start]).rise)
-        XCTAssertNil(meal(complete, others: [point(-10).date]).rise)
+    func testOverlapIsContextNotMissingObservation() {
+        for other in [point(60).date, start, point(-10).date, point(-60).date] {
+            let observation = meal(complete, others: [other])
+            XCTAssertEqual(observation.rise, 40)
+            XCTAssertTrue(observation.hasNearbyMeal)
+        }
+        XCTAssertFalse(meal(complete, others: [point(121).date]).hasNearbyMeal)
         XCTAssertNotNil(meal(complete, others: [point(121).date]).rise)
     }
     func testMissingFutureSamplesCannotCompleteObservation() {

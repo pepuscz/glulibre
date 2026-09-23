@@ -10,11 +10,11 @@ An open, local-first iPhone + Watch companion for longevity-curious people:
 - **Chart first:** glucose, trend and history before dates or operational details. Landscape expands the chart; inspection shows exact values/times.
 - **Native, not instructional:** platform controls, short labels, useful defaults. No legacy dashboards or unnecessary settings. Support Dynamic Type, VoiceOver and dark mode; color alone is insufficient.
 - **Watch is a glance:** glucose + arrow + chart, then meals. Automatic updates, native Crown scrolling and useful complications/widgets—not Connection/Sync chores. Stale readings must look stale.
-- **Notify for a reason:** actionable events, not every reading or ordinary meal rise. No automatic snooze popup or glucose-as-unread badge. Preserve safety alerts and saved choices; policy changes need review/tests.
+- **Notify for a reason:** one connection-loss notice per outage, not endless retries. No routine-reading spam, automatic snooze popup or glucose-as-unread badge. Preserve glucose safety alerts and saved choices; policy changes need review/tests.
 
 ## Evidence and engineering guardrails
 
-- Compare repeated **whole meals**, with count/spread, coverage and sleep/activity context. Missing is not zero; association is not ingredient-level causation.
+- Group nearby course photos non-destructively; show overlapping observations, but keep stricter **whole-meal** comparison gates. Show count/spread, coverage and sleep/activity context. Missing is not zero; association is not causation.
 - Flatter curves are not proven longevity or food-quality scores. No universal “perfect” targets, invented confidence or Sinclair clinical protocols. Primary studies support claims; social/X posts suggest questions, not clinical truth.
 - Preserve originals, timestamps, corrections and provenance. AI estimates food, not glucose. Health context stays local; sharing is opt-in, nutrition export requires confirmation, historical photos never auto-upload.
 - Reuse sensor/persistence engines through testable adapters. Separate capture, extraction, deterministic analysis and UI; no duplicate stacks.

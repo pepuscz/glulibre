@@ -92,4 +92,66 @@ final class FoodResponseTests: XCTestCase {
     func testUnknownPortionNotGrouped() {
         XCTAssertNotEqual(FoodResponseCore.key(for: meal(portion: "unknown")), FoodResponseCore.key(for: meal(portion: "unknown")))
     }
+
+    func testCoursesShareFirstWindowAndFullComposition() {
+        let first = meal("Toast")
+        let second = meal("Yogurt", at: date.addingTimeInterval(15 * 60))
+        let meals = [second, first]
+        let occasions = FoodResponseCore.occasions(meals: meals, now: date.addingTimeInterval(9000))
+        XCTAssertEqual(occasions.count, 1)
+        XCTAssertEqual(occasions[0].date, date)
+        XCTAssertEqual(occasions[0].meals.map(\.id), [first.id, second.id])
+        XCTAssertEqual(occasions[0].input.components.count, 2)
+        let groups = FoodResponseCore.groups(meals: meals, points: points(), now: date.addingTimeInterval(9000))
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertTrue(groups[0].responses[0].usable)
+        XCTAssertEqual(groups[0].responses[0].mealIDs, [first.id, second.id])
+        XCTAssertNotEqual(groups[0].id, FoodResponseCore.key(for: first))
+    }
+
+    func testOccasionWindowIsBoundedAndDoesNotChainSnacks() {
+        let captures = [0.0, 20, 30, 40, 60, 80].map { meal(at: date.addingTimeInterval($0 * 60)) }
+        let occasions = FoodResponseCore.occasions(meals: captures, now: date.addingTimeInterval(9000))
+        XCTAssertEqual(occasions.map { $0.meals.count }, [3, 2, 1])
+        XCTAssertEqual(occasions.flatMap(\.meals).count, captures.count)
+    }
+
+    func testSeparationCorrectionDeletionAndFutureCapture() {
+        let first = meal("Toast")
+        let separate = meal("Yogurt", at: date.addingTimeInterval(60), separate: true)
+        XCTAssertEqual(FoodResponseCore.occasions(meals: [first, separate], now: date.addingTimeInterval(9000)).count, 2)
+        let later = meal("Yogurt", at: date.addingTimeInterval(60))
+        XCTAssertEqual(FoodResponseCore.occasions(meals: [first, later], now: date).count, 1)
+        XCTAssertEqual(FoodResponseCore.occasions(meals: [later], now: date.addingTimeInterval(9000)).first?.date, later.date)
+    }
+
+    func testOverlapRetainsObservationButNotFoodAttribution() {
+        let first = meal("Toast")
+        let next = meal("Yogurt", at: date.addingTimeInterval(3600))
+        let result = FoodResponseCore.groups(meals: [first, next], points: points(), now: date.addingTimeInterval(9000))
+            .flatMap(\.responses).first { $0.id == first.id }!
+        XCTAssertEqual(result.observedRise, 40)
+        XCTAssertFalse(result.usable)
+        XCTAssertNil(result.rise)
+        XCTAssertNil(result.area)
+        XCTAssertFalse(result.trace.isEmpty)
+    }
+
+    func testUnknownCourseCannotDisappearFromComposition() {
+        let first = meal("Toast")
+        let unknown = FoodResponseInput(id: UUID(), date: date.addingTimeInterval(60), timeZone: "UTC", title: "Photo", components: [], separate: false)
+        let combined = FoodResponseCore.occasions(meals: [first, unknown], now: date.addingTimeInterval(9000))[0].input
+        XCTAssertTrue(combined.components.isEmpty)
+        XCTAssertEqual(FoodResponseCore.key(for: combined), first.id.uuidString)
+    }
+
+    func testRepeatedMultiCourseMealCountsOccasionsNotPhotos() {
+        let firsts = (0..<3).map { meal("Toast", at: date.addingTimeInterval(Double(-$0 * 86400))) }
+        let courses = firsts.map { meal("Yogurt", at: $0.date.addingTimeInterval(600)) }
+        let groups = FoodResponseCore.groups(meals: firsts + courses, points: firsts.flatMap { points(at: $0.date) }, now: date.addingTimeInterval(9000))
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups[0].responses.count, 3)
+        XCTAssertEqual(groups[0].days, 3)
+        XCTAssertEqual(groups[0].medianRise, 40)
+    }
 }

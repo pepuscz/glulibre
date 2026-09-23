@@ -142,8 +142,9 @@ struct FoodResponseDetail: View {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 6) {
                                             Text(meal.eatenAt.formatted(date: .abbreviated, time: .shortened)).font(.subheadline.bold()).foregroundStyle(.primary)
-                                            if let rise = response.rise { Text(signed(rise, model: model)).foregroundStyle(.orange).font(.headline) }
-                                            else { Text(FoodResponseStatus.title(for: response)).font(.caption).foregroundStyle(.secondary) }
+                                            if let rise = response.observedRise { Text(signed(rise, model: model)).foregroundStyle(.orange).font(.headline) }
+                                            Text(FoodResponseStatus.title(for: response)).font(.caption).foregroundStyle(.secondary)
+                                            if response.mealIDs.count > 1 { Text("\(response.mealIDs.count) photos together").font(.caption).foregroundStyle(.secondary) }
                                         }
                                         Spacer()
                                         Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.secondary)
@@ -164,7 +165,7 @@ struct FoodResponseDetail: View {
                     }
                     JournalCard {
                         DisclosureGroup("How this comparison works") {
-                            Text("Each line is one usable meal, aligned to its pre-meal baseline. Typical rise appears after at least three usable days; it is a median, not proof of a cause. Portions, sleep, activity and sensor variation still matter. Exact food names, portions and preparation are matched together. Use Meal options to separate a mismatch.")
+                            Text("Each line is one eating occasion. Dashed lines show observations excluded from typical-rise comparisons, such as overlapping meals. Typical rise needs at least three usable days. Photos within 30 minutes of the first share a window; all foods are matched together, not credited individually.")
                                 .font(.footnote).foregroundStyle(.secondary)
                             if let area = group.medianArea {
                                 LabeledContent("Median area above baseline", value: "\(model.formatted(area)) \(model.unit)·min").font(.caption)
@@ -314,20 +315,22 @@ private struct FoodResponsePlot: View {
     var sharedDomain: ClosedRange<Double>?
     var tint: Color = JournalStyle.accent
     static func domain(_ groups: [FoodResponseGroup], model: JournalModel) -> ClosedRange<Double> {
-        let values = groups.flatMap(\.usable).flatMap { response in response.trace.map { model.value($0.mgDl - (response.baseline ?? $0.mgDl)) } }
+        let values = groups.flatMap(\.observed).flatMap { response in response.trace.map { model.value($0.mgDl - (response.baseline ?? $0.mgDl)) } }
         return min(model.value(-10), (values.min() ?? 0) - model.value(5))...max(model.value(40), (values.max() ?? 0) + model.value(10))
     }
     var body: some View {
         Chart {
             RuleMark(y: .value("Baseline", 0)).foregroundStyle(.secondary.opacity(0.4)).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-            ForEach(group.usable) { response in
-                ForEach(response.trace) { point in
+            ForEach(group.observed) { response in
+              ForEach(Array(GlucoseObservations.segments(response.trace).enumerated()), id: \.offset) { segment in
+                ForEach(segment.element) { point in
                     LineMark(x: .value("Minutes after meal", point.date.timeIntervalSince(response.date) / 60),
                              y: .value("Rise", model.value(point.mgDl - (response.baseline ?? point.mgDl))),
-                             series: .value("Meal", response.date.formatted(date: .abbreviated, time: .shortened)))
-                        .foregroundStyle(tint.opacity(group.usable.count > 1 ? 0.8 : 1))
-                        .lineStyle(StrokeStyle(lineWidth: compact ? 2 : 2.5))
+                             series: .value("Meal", "\(response.id)-\(segment.offset)"))
+                        .foregroundStyle(tint.opacity(response.usable ? 1 : 0.65))
+                        .lineStyle(StrokeStyle(lineWidth: compact ? 2 : 2.5, dash: response.usable ? [] : [4, 3]))
                 }
+              }
             }
         }.chartXScale(domain: -5...125).chartYScale(domain: sharedDomain ?? Self.domain([group], model: model))
             .chartLegend(.hidden)
@@ -344,14 +347,14 @@ private struct FoodResponsePlot: View {
                 }
             }
             .chartYAxis { if !compact { AxisMarks(position: .leading) } }
-            .overlay { if group.usable.isEmpty { Image(systemName: "waveform.path").foregroundStyle(.secondary.opacity(0.4)).font(.title2) } }
+            .overlay { if group.observed.isEmpty { Image(systemName: "waveform.path").foregroundStyle(.secondary.opacity(0.4)).font(.title2) } }
             .accessibilityElement(children: compact ? .ignore : .contain)
-            .accessibilityLabel("Glucose change after \(group.title), \(group.usable.count) usable observations, in \(model.unit)")
+            .accessibilityLabel("Glucose change after \(group.title), \(group.observed.count) observed, \(group.usable.count) comparable, in \(model.unit)")
             .accessibilityValue(group.medianRise.map { "Typical rise \(model.formatted($0))" } ?? FoodResponseStatus.title(for: group))
     }
 }
 
-private struct FoodPhoto: View {
+struct FoodPhoto: View {
     let meal: MealRecord?
     @State private var thumbnail: UIImage?
     var body: some View {

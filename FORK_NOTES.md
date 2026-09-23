@@ -5,7 +5,7 @@ GluLibre is a modified version of [xDrip4iOS / xdripswift](https://github.com/Jo
 ## Starting point
 
 - Upstream checkpoint: 6.3.3, [`69eb8833`](https://github.com/JohanDegraeve/xdripswift/commit/69eb8833).
-- Fork modifications: 24 August–20 September 2026.
+- Fork modifications: 24 August–23 September 2026.
 - `main` contains the current GluLibre app, README and screenshots. Develop on feature branches, then promote verified changes to `main`; a source update is not an App Store release.
 - `master` was retained as an upstream 7.x mirror. Do not automatically merge that architecture into this fork; port deliberately and revalidate on hardware.
 

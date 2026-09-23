@@ -183,17 +183,19 @@ final class WatchManager: NSObject, ObservableObject {
         let now = Date()
         let meals = MealStore.shared.all().filter { $0.eatenAt <= now }
         guard let meal = meals.first, now.timeIntervalSince(meal.eatenAt) < 24 * 3600 else { return nil }
+        let occasions = FoodResponseCore.occasions(meals: meals.map(\.responseInput), now: now)
+        guard let occasion = occasions.first(where: { $0.meals.contains { $0.id == meal.id } }) else { return nil }
         let readings = bgReadingsAccessor.getLatestBgReadingSnapshots(limit: nil,
-            fromDate: meal.eatenAt.addingTimeInterval(-15 * 60), forSensor: nil,
+            fromDate: occasion.date.addingTimeInterval(-15 * 60), forSensor: nil,
             ignoreRawData: true, ignoreCalculatedValue: false)
         let points = readings.map { JournalGlucosePoint(date: $0.timeStamp, mgDl: $0.calculatedValue, sensorID: $0.sensorID) }
-        let observation = GlucoseObservations.meal(at: meal.eatenAt,
-            otherMealDates: meals.filter { $0.id != meal.id }.map(\.eatenAt), points: points, now: now)
+        let observation = GlucoseObservations.meal(at: occasion.date,
+            otherMealDates: occasions.filter { $0.id != occasion.id }.map(\.date), points: points, now: now)
         let collecting = now < observation.interval.end
         let state = collecting ? "collecting" : (observation.rise == nil ? "limited" : "ready")
-        return WatchMealSnapshot(title: String(meal.displayTitle.prefix(80)), eatenAt: meal.eatenAt.timeIntervalSince1970,
+        return WatchMealSnapshot(title: String(occasion.input.title.prefix(80)), eatenAt: occasion.date.timeIntervalSince1970,
             state: state, riseMgDl: observation.rise,
-            detail: collecting ? "Two-hour observation" : (observation.limitation ?? "Observed after this meal"))
+            detail: collecting ? "Two-hour observation" : (observation.limitation ?? (observation.hasNearbyMeal ? "Overlapping meals" : "Observed after this meal")))
     }
     
     func sendStateToWatch(forceComplicationUpdate: Bool) {
