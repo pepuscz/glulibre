@@ -232,6 +232,20 @@ class BluetoothTransmitter: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     func permitsBluetoothConnectionAttempt() -> Bool {
         true
     }
+
+    /// Multi-characteristic drivers may validate identity before adopting a CGM.
+    var announcesConnectionImmediately: Bool { true }
+
+    func performOnBluetoothQueue(_ action: @escaping () -> Void) {
+        centralQueue.async(execute: action)
+    }
+
+    func announceValidatedConnection() {
+        dispatchToMain { [weak self] in
+            guard let self else { return }
+            self.bluetoothTransmitterDelegate?.didConnectTo(bluetoothTransmitter: self)
+        }
+    }
     
     /// gets peripheral connection status, nil if peripheral not existing yet
     func getConnectionStatus() -> CBPeripheralState? {
@@ -619,10 +633,7 @@ class BluetoothTransmitter: NSObject, CBCentralManagerDelegate, CBPeripheralDele
         }
         
         // delegate can update UI / Core Data. Ensure main thread
-        dispatchToMain { [weak self] in
-            guard let self = self else { return }
-            self.bluetoothTransmitterDelegate?.didConnectTo(bluetoothTransmitter: self)
-        }
+        if announcesConnectionImmediately { announceValidatedConnection() }
         
         // Persist the CoreBluetooth identifier itself. `stopScanAndconnect` has
         // already copied it into the in-memory properties, so comparing those

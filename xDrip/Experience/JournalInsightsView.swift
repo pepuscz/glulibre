@@ -11,40 +11,63 @@ struct JournalInsightsView: View {
             List {
                 Section {
                     Picker("Explore", selection: $selection) {
-                        Text("Your foods").tag(0)
+                        Text("Foods").tag(0)
                         Text("Activity").tag(1)
                     }.pickerStyle(.segmented)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                        .listRowBackground(Color.clear)
                 }
                 if selection == 0 {
                     FoodLibrarySection(model: model, health: health, edit: edit, capture: capture)
                 } else {
-                    Section {
-                        if !health.enabled {
-                            Label("Activity & glucose", systemImage: "figure.run").font(.headline)
-                            Text("See Apple Watch workouts alongside your readings.").foregroundStyle(.secondary)
-                            Button("Connect Apple Health") { health.connect() }.disabled(health.loading)
-                        } else {
-                            if health.loading { ProgressView("Reading Health data…") }
+                    if !health.enabled || !health.movementPermissionRequested {
+                        Section {
+                            Label("Everyday movement", systemImage: "figure.walk").font(.headline)
+                            Text("Steps and standing, without starting a workout.").foregroundStyle(.secondary)
+                            Button("Include movement") { health.connect() }.disabled(health.loading)
+                        }
+                    }
+                    if health.enabled && health.movementPermissionRequested {
+                        Section("After meals") {
+                            if let error = health.movementError { Text(error).foregroundStyle(.secondary) }
+                            if model.meals.isEmpty {
+                                Text("No meals logged").foregroundStyle(.secondary)
+                                Button("Log a meal", systemImage: "camera.fill", action: capture)
+                            }
+                            ForEach(Array(model.meals.filter { $0.eatenAt <= model.now }.prefix(5)), id: \.id) { meal in
+                                NavigationLink {
+                                    JournalMealDetailContent(model: model, mealID: meal.id, edit: edit)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text(meal.displayTitle).font(.headline)
+                                        Text(meal.eatenAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                                        JournalMovementContextLabel(health: health, date: model.occasion(for: meal).date).font(.subheadline).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if health.enabled {
+                        Section {
+                            if health.loading && health.workouts.isEmpty { ProgressView("Reading workouts…") }
                             if let error = health.error { Text(error).foregroundStyle(.secondary) }
                             if recentWorkouts.isEmpty && !health.loading {
-                                Text("No workouts available").font(.headline)
-                                Text("Workouts may still be syncing, or Health access may be off.").foregroundStyle(.secondary)
-                                NavigationLink("Health access", destination: healthAccess)
+                                Text("No recent workouts").foregroundStyle(.secondary)
                             }
                             ForEach(recentWorkouts) { workout in
                                 NavigationLink { JournalWorkoutDetail(model: model, workout: workout) } label: {
                                     VStack(alignment: .leading, spacing: 5) {
                                         Label(workout.title, systemImage: "figure.run").font(.headline)
                                         Text("\(workout.interval.start.formatted(date: .abbreviated, time: .shortened)) · \(Int(workout.activeDuration / 60)) min").font(.subheadline).foregroundStyle(.secondary)
-                                        Text(workout.source).font(.caption).foregroundStyle(.secondary)
                                     }.padding(.vertical, 4)
                                 }
                             }
-                        }
-                    } header: { Text("Workouts · last 14 days") } footer: { Text("Health data stays on your iPhone.") }
+                        } header: { Text("Workouts · last 14 days") }
+                        Section { NavigationLink("Health access", destination: healthAccess) }
+                    }
                 }
                 Section {
-                    NavigationLink { JournalPatternsView(model: model, embedded: true) } label: { Label("About your readings", systemImage: "info.circle") }
+                    NavigationLink { JournalPatternsView(model: model, embedded: true) } label: { Label("About readings", systemImage: "info.circle") }
                 }
             }.navigationTitle("Insights")
                 .onAppear { health.refresh() }
@@ -98,16 +121,14 @@ struct JournalHealthContextSettings: View {
     @ObservedObject var health: JournalHealthContext
     var body: some View {
         Section {
-            if health.loading { ProgressView("Reading Health context…") }
-            Text("Workouts & sleep").font(.headline)
-            Button(health.enabled ? "Review permissions" : "Connect Apple Health") { health.connect() }.disabled(health.loading)
+            if health.loading && health.workouts.isEmpty && health.movement.isEmpty { ProgressView("Reading Health data…") }
+            Button(!health.enabled ? "Connect Apple Health" : (health.movementPermissionRequested ? "Review permissions" : "Include everyday movement")) { health.connect() }.disabled(health.loading)
             if health.enabled {
-                LabeledContent("Workouts available", value: "\(health.workouts.count)")
-                Button("Disconnect context", role: .destructive) { health.disconnect() }
+                Button("Disconnect", role: .destructive) { health.disconnect() }
             }
             if let error = health.error { Text(error).font(.footnote).foregroundStyle(.secondary) }
-        } header: { Text("Understand your day") } footer: {
-            Text("Workouts and sleep stay on your iPhone. Disconnecting leaves Health records intact.")
+        } header: { Text("Movement & sleep") } footer: {
+            Text("Steps, distance, stand minutes, active energy, workouts and sleep stay on this iPhone. Disconnecting leaves Health records intact.")
         }
     }
 }

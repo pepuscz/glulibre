@@ -15,7 +15,7 @@ final class JourneyAudit: XCTestCase {
     func capture(_ name: String) {
         // UIKit sheet animations can outlive an accessibility snapshot becoming available.
         Thread.sleep(forTimeInterval: 0.7)
-        let image = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        let image = XCTAttachment(screenshot: app.screenshot())
         image.name = name; image.lifetime = .keepAlways; add(image)
         let tree = XCTAttachment(string: app.debugDescription)
         tree.name = name + "-elements"; tree.lifetime = .keepAlways; add(tree)
@@ -32,6 +32,137 @@ final class JourneyAudit: XCTestCase {
     }
 
     func back() { app.navigationBars.buttons.element(boundBy: 0).tap() }
+
+    func testBackupAndRestoreEntryPoints() {
+        app.terminate()
+        app.launchArguments = ["--journal-ui-testing", "--food-preview", "--journal-storage-checks"]
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 20))
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(tap("Backup & restore", scroll: true))
+        XCTAssertTrue(app.buttons["backup.export"].waitForExistence(timeout: 5))
+        capture("backup-home")
+        app.buttons["backup.export"].tap()
+        XCTAssertTrue(app.secureTextFields["backup.password"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Export"].isEnabled)
+        app.secureTextFields["backup.password"].tap()
+        app.secureTextFields["backup.password"].typeText("synthetic test password")
+        app.secureTextFields["backup.confirmPassword"].tap()
+        app.secureTextFields["backup.confirmPassword"].typeText("synthetic test password")
+        XCTAssertTrue(app.buttons["Export"].isEnabled)
+        capture("backup-password")
+        app.buttons["Export"].tap()
+        let passwordGone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.secureTextFields["backup.password"])
+        XCTAssertEqual(XCTWaiter.wait(for: [passwordGone], timeout: 15), .completed)
+        XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        capture("backup-export-picker")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts["Last export"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["backup.restore"].waitForExistence(timeout: 5))
+        app.buttons["backup.restore"].tap()
+        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+        capture("backup-files-picker")
+        let file = app.cells.matching(NSPredicate(format: "label BEGINSWITH %@", "GluLibre-")).firstMatch
+        XCTAssertTrue(file.waitForExistence(timeout: 5))
+        file.tap()
+        XCTAssertTrue(app.secureTextFields["backup.password"].waitForExistence(timeout: 5))
+        app.secureTextFields["backup.password"].tap()
+        app.secureTextFields["backup.password"].typeText("synthetic test password")
+        app.buttons["Continue"].tap()
+        XCTAssertTrue(app.buttons["backup.confirmRestore"].waitForExistence(timeout: 15))
+        capture("backup-preview")
+        app.buttons["backup.confirmRestore"].tap()
+        XCTAssertTrue(app.staticTexts["Restored 0 meals and 0 readings. Existing records and sensor pairing were kept."].waitForExistence(timeout: 10))
+        capture("backup-idempotent-restore")
+    }
+
+    func testNotificationPresentation() {
+        for mode in ["fresh", "stale", "missing"] {
+            app.terminate()
+            app.launchArguments = ["--journal-ui-testing", "--food-preview", "--notification-preview", mode]
+            app.launch()
+            XCTAssertTrue(app.staticTexts[mode == "fresh" ? "Low glucose" : "Readings paused"].waitForExistence(timeout: 15))
+            XCTAssertFalse(app.staticTexts["LOW ALARM"].exists)
+            if mode == "stale" { XCTAssertTrue(app.staticTexts["Reading out of date"].exists) }
+            if mode != "fresh" {
+                XCTAssertTrue(app.staticTexts["Keep your iPhone near the sensor. Open GluLibre if readings don’t resume."].exists)
+            }
+            capture("Notification-" + mode)
+        }
+    }
+
+    func testSmartGuideSetupRequiresPreparationAndSerial() {
+        app.terminate()
+        app.launchArguments = ["--journal-ui-testing", "--food-preview", "--journal-storage-checks"]
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 20))
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(tap("Sensor", scroll: true))
+        XCTAssertTrue(app.buttons["sensor.setup"].waitForExistence(timeout: 5))
+        app.buttons["sensor.setup"].tap()
+        XCTAssertTrue(app.buttons["sensor.smartguide"].waitForExistence(timeout: 5))
+        app.buttons["sensor.smartguide"].tap()
+        XCTAssertTrue(app.staticTexts["Experimental support"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Started and calibrated in mySugr"].exists)
+        let connect = app.buttons["smartguide.connect"]
+        XCTAssertFalse(connect.isEnabled)
+        capture("smartguide-setup")
+        let serial = app.textFields["smartguide.serial"]
+        serial.tap()
+        serial.typeText("12345678\n")
+        XCTAssertTrue(connect.isEnabled)
+        XCTAssertFalse(app.switches["smartguide.prepared"].exists)
+        XCTAssertFalse(app.buttons["smartguide.start"].exists)
+        capture("smartguide-prepared")
+        // Do not tap Connect: fixtures must never start a real radio session.
+        back()
+        XCTAssertFalse(app.buttons["Start a new sensor"].exists)
+        app.buttons["sensor.libre"].tap()
+        XCTAssertTrue(app.buttons["Start a new sensor"].exists)
+        XCTAssertTrue(app.buttons["Finish connection"].exists)
+    }
+
+    func testSmartGuideCalibrationRequiresMeterValueAndConfirmation() {
+        app.terminate()
+        app.launchArguments = ["--journal-ui-testing", "--food-preview", "--smartguide-calibration-preview"]
+        app.launch()
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(tap("Sensor", scroll: true))
+        app.buttons["sensor.setup"].tap()
+        app.buttons["sensor.smartguide"].tap()
+        let serial = app.textFields["smartguide.serial"]
+        XCTAssertTrue(serial.waitForExistence(timeout: 5))
+        serial.tap()
+        serial.typeText("12345678\n")
+        XCTAssertTrue(tap("Calibrate with meter", scroll: true))
+        let review = app.buttons["smartguide.calibration.review"]
+        XCTAssertTrue(review.waitForExistence(timeout: 5))
+        XCTAssertFalse(review.isEnabled)
+        let value = app.textFields["smartguide.calibration.value"]
+        value.tap()
+        value.typeText("0")
+        XCTAssertFalse(review.isEnabled)
+        value.typeText(XCUIKeyboardKey.delete.rawValue + "100")
+        // Select explicit meter units; changing units must clear the old number.
+        app.buttons["smartguide.calibration.units"].tap()
+        app.buttons["mg/dL"].tap()
+        value.tap()
+        // Depending on initial preference the picker may not have changed units.
+        if let text = value.value as? String, text == "100" {
+            value.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 3))
+        }
+        value.typeText("100")
+        XCTAssertTrue(review.isEnabled)
+        review.tap()
+        XCTAssertTrue(app.alerts["Send 100 mg/dL?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.buttons["Send calibration"].exists)
+        capture("smartguide-calibration-confirmation")
+        app.alerts.buttons["Cancel"].tap()
+        // Never send to hardware from a UI fixture. Cancelling makes no write.
+        XCTAssertTrue(review.isEnabled)
+        app.buttons["Done"].tap()
+    }
 
     func testOfflineLicensesRemainAvailable() {
         app.tabBars.buttons["Settings"].tap()
@@ -190,6 +321,11 @@ final class JourneyAudit: XCTestCase {
             .press(forDuration: 0.1, thenDragTo: plot.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)))
         XCTAssertNotEqual(readout.label, first)
         capture("chart-crosshairs-landscape")
+        // Cross-check the app-cropped screenshot's rotation on the dedicated simulator.
+        let landscapeScreen = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        landscapeScreen.name = "chart-landscape-screen"
+        landscapeScreen.lifetime = .keepAlways
+        add(landscapeScreen)
         // Empty tail of the same fixture: do not invent a current reading.
         plot.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
         XCTAssertTrue(readout.label.contains("No reading"))
@@ -253,18 +389,79 @@ final class JourneyAudit: XCTestCase {
         app.tabBars.buttons["Insights"].tap()
         XCTAssertTrue(tap("Activity"))
         capture("20-activity")
-        XCTAssertTrue(tap("Sample run"))
+        XCTAssertTrue(tap("Sample run", scroll: true))
         capture("21-workout")
         back()
-        XCTAssertTrue(tap("About your readings", scroll: true))
+        XCTAssertTrue(tap("About readings", scroll: true))
         capture("22-reading-information")
     }
 
     func testSettingsInventory() {
         app.tabBars.buttons["Settings"].tap()
+        XCTAssertFalse(app.staticTexts["Glucose alerts & visibility"].exists)
+        XCTAssertFalse(app.staticTexts["Glucose & trend on your watch face"].exists)
+        XCTAssertFalse(app.staticTexts["Choose what to share"].exists)
         capture("30-settings")
         // The initial audit records labels before hard-coding deeper journeys.
         app.swipeUp(); capture("31-settings-bottom")
+    }
+
+    func testHealthOnboardingHasOneAction() {
+        app.terminate()
+        app.launchArguments += ["--health-disconnected"]
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Insights"].waitForExistence(timeout: 15))
+        app.tabBars.buttons["Insights"].tap()
+        XCTAssertTrue(tap("Activity"))
+        XCTAssertEqual(app.buttons.matching(identifier: "Include movement").count, 1)
+        XCTAssertFalse(app.buttons["Connect Apple Health"].exists)
+        XCTAssertFalse(app.staticTexts["No recent workouts"].exists)
+        capture("activity-single-health-prompt")
+    }
+
+    func testMealDetailsKeepCoverageAndContext() {
+        app.terminate()
+        app.launchArguments = ["--journal-ui-testing", "--journal-demo", "--journal-meal", "--journal-health-demo"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Edit meal"].waitForExistence(timeout: 15))
+        XCTAssertTrue(tap("Observation details", scroll: true))
+        capture("meal-observation-expanded")
+        XCTAssertTrue(app.descendants(matching: .any)["meal.glucoseCoverage"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Health context"].exists)
+        XCTAssertTrue(tap("After-meal movement", scroll: true))
+        XCTAssertTrue(tap("Movement details", scroll: true))
+        capture("meal-context-details")
+        XCTAssertTrue(app.descendants(matching: .any)["movement.distance"].waitForExistence(timeout: 5))
+    }
+
+    func testEverydayMovementAndMissingData() {
+        for mode in ["recorded", "--movement-missing", "--movement-upgrade", "--movement-refreshing"] {
+            app.terminate()
+            app.launchArguments = ["--journal-ui-testing", "--journal-demo", "--journal-meal", "--journal-health-demo", mode]
+            app.launch()
+            XCTAssertTrue(app.buttons["Edit meal"].waitForExistence(timeout: 15))
+            XCTAssertTrue(tap("After-meal movement", scroll: true))
+            if mode == "--movement-upgrade" {
+                XCTAssertTrue(tap("Include movement", scroll: true))
+            } else {
+                XCTAssertTrue(tap("1 hour", scroll: true))
+                let picker = app.segmentedControls["movement.window"]
+                XCTAssertTrue(picker.exists)
+                for label in ["30 min", "1 hour", "2 hours"] {
+                    picker.buttons[label].tap()
+                    if mode == "recorded" || mode == "--movement-refreshing" {
+                        XCTAssertTrue(app.staticTexts["movement.steps"].exists)
+                        XCTAssertFalse(app.staticTexts["movement.missing"].exists)
+                    } else {
+                        XCTAssertTrue(app.staticTexts["movement.missing"].exists)
+                        XCTAssertFalse(app.staticTexts["movement.steps"].exists)
+                    }
+                }
+            }
+            XCTAssertFalse(app.staticTexts["Sitting"].exists)
+            XCTAssertFalse(app.staticTexts["Inactive"].exists)
+            capture("movement-" + mode)
+        }
     }
 
     func testEveryEverydaySettingsDestination() {
@@ -285,7 +482,7 @@ final class JourneyAudit: XCTestCase {
                 capture("42-key-entry")
                 XCTAssertFalse(app.buttons["Save"].firstMatch.isEnabled)
                 XCTAssertTrue(tap("Cancel"))
-                XCTAssertTrue(tap("Model & key management", scroll: true))
+                XCTAssertTrue(app.textFields["journal.ai.model"].waitForExistence(timeout: 5))
                 capture("43-analysis-advanced")
             }
             app.swipeUp(); capture("44-\(label)-bottom")
@@ -358,7 +555,9 @@ final class JourneyAudit: XCTestCase {
         XCTAssertTrue(tap("Close camera"))
         app.tabBars.buttons["Insights"].tap()
         capture("82-empty-foods")
-        XCTAssertTrue(tap("Log a meal"))
+        for _ in 0..<4 where !app.buttons["Log a meal"].isHittable { app.swipeUp() }
+        capture("82-empty-foods-action")
+        XCTAssertTrue(tap("Log a meal", scroll: true))
         XCTAssertTrue(tap("Close camera"))
         XCTAssertTrue(tap("Activity"))
         capture("83-empty-activity")
@@ -382,14 +581,15 @@ final class JourneyAudit: XCTestCase {
         app.tabBars.buttons["Settings"].tap()
         XCTAssertTrue(tap("Sensor"))
         XCTAssertTrue(tap("Set up a sensor", scroll: true) || tap("Replace or finish sensor setup", scroll: true))
+        app.buttons["sensor.libre"].tap()
         capture("95-native-sensor-setup")
         XCTAssertTrue(tap("Start a new sensor", scroll: true))
         capture("96-new-sensor-confirmation")
         XCTAssertTrue(tap("Cancel"))
-        back(); back()
+        back(); back(); back()
         XCTAssertTrue(tap("Notifications", scroll: true))
         XCTAssertTrue(tap("Customize alarms", scroll: true))
-        XCTAssertTrue(tap("Low Alarm", scroll: true))
+        XCTAssertTrue(tap("Low glucose", scroll: true))
         capture("97-native-alarm-periods")
         XCTAssertTrue(tap("From midnight", scroll: true))
         capture("98-native-alarm-editor")
@@ -402,9 +602,14 @@ final class JourneyAudit: XCTestCase {
         XCTAssertTrue(tap("Privacy & data", scroll: true))
         XCTAssertTrue(tap("Storage & export", scroll: true))
         capture("99-storage")
-        XCTAssertTrue(tap("Keep glucose history"))
-        capture("99b-retention")
+        XCTAssertTrue(app.buttons["Keep glucose history, Forever"].exists)
+        XCTAssertFalse(app.buttons["Keep glucose history, Forever"].isEnabled)
+        // Inspect the confirmation without enabling deletion or changing retention.
+        app.switches["Remove older history"].coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        XCTAssertTrue(app.alerts["Remove older history automatically?"].waitForExistence(timeout: 5))
+        capture("99b-retention-confirmation")
         XCTAssertTrue(tap("Cancel"))
+        XCTAssertTrue(app.buttons["Keep glucose history, Forever"].exists)
     }
 
     func testAccessibilityLayouts() {
@@ -443,8 +648,8 @@ final class JourneyAudit: XCTestCase {
                 app.swipeUp()
             }
         }
-        reveal("Together at this meal")
-        XCTAssertTrue(app.staticTexts["Together at this meal"].exists)
+        reveal("Glucose response")
+        XCTAssertTrue(app.staticTexts["Glucose response"].exists)
         XCTAssertTrue(app.staticTexts["Toast course"].exists)
         capture("meal-occasion-courses")
         reveal("Observed peak")

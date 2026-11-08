@@ -1,41 +1,32 @@
 import SwiftUI
 
-/// Mirrors the phone's existing alert. This view does not schedule additional alerts.
+/// Mirrors the phone alert; never schedules a second notification.
 struct NotificationView: View {
-    var alertTitle: String?
-    var bgReadingValues: [Double]?
-    var bgReadingDates: [Date]?
-    var isMgDl: Bool?
-    var slopeOrdinal: Int?
-    var deltaValueInUserUnit: Double?
-    var urgentLowLimitInMgDl: Double?
-    var lowLimitInMgDl: Double?
-    var highLimitInMgDl: Double?
-    var urgentHighLimitInMgDl: Double?
-    var alertUrgencyType: AlertUrgencyType?
-    var bgUnitString: String?
-    var bgValueInMgDl: Double?
-    var bgReadingDate: Date?
-    var bgValueStringInUserChosenUnit: String?
+    let presentation: AlertNotificationPresentation
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
-            let fresh = WatchGlancePolicy.isFresh(value: bgValueInMgDl, date: bgReadingDate, now: context.date)
             VStack(alignment: .leading, spacing: 8) {
-                Text(alertTitle?.isEmpty == false ? alertTitle! : "Glucose update")
-                    .font(.headline).fixedSize(horizontal: false, vertical: true)
-                if fresh {
+                Text(presentation.title).font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                if presentation.isFresh(now: context.date) {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(WatchGlancePolicy.valueText(bgValueInMgDl, isMgDl: isMgDl ?? true))
+                        Text(WatchGlancePolicy.valueText(presentation.value, isMgDl: presentation.isMgDl))
                             .font(.system(.largeTitle, design: .rounded).weight(.semibold)).monospacedDigit()
-                        Text(WatchGlancePolicy.trendSymbol(slopeOrdinal ?? 0)).font(.title3)
+                        Text(WatchGlancePolicy.trendSymbol(presentation.slope)).font(.title3)
                     }
-                    Text(bgUnitString ?? "").font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Label("Check latest reading", systemImage: "clock.badge.exclamationmark")
-                        .font(.caption)
+                    Text(presentation.isMgDl ? "mg/dL" : "mmol/L").font(.caption).foregroundStyle(.secondary)
+                } else if presentation.date != nil {
+                    Label("Reading out of date", systemImage: "clock.badge.exclamationmark").font(.caption)
+                    if presentation.bodyContainsReading {
+                        Text("Open GluLibre for your latest reading.").font(.caption)
+                    }
                 }
-                if let date = bgReadingDate, date <= context.date {
+                if (!presentation.bodyContainsReading || presentation.date == nil), !presentation.body.isEmpty {
+                    Text(presentation.body).font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let date = presentation.date, date <= context.date {
                     Text("Read at \(date.formatted(date: .omitted, time: .shortened))")
                         .font(.caption2).foregroundStyle(.secondary)
                 }

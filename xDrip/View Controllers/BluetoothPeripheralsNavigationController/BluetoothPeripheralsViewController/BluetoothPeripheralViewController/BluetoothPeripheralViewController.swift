@@ -822,6 +822,10 @@ class BluetoothPeripheralViewController: UIViewController {
         
         // if using a special case (like a heartbeat), adapt the strings to include relevant instructions and information
         switch expectedBluetoothPeripheralType {
+        case .smartGuide:
+            transmitterIdTitleText = "SmartGuide serial number"
+            transmitterIdMessageText = "Start in Roche’s app first. Enter the full serial from the blue cap, not the PIN. Enter the PIN only in the iPhone Bluetooth prompt. Calibration is in Settings → Sensor → Sensor setup → SmartGuide when supported. Experimental support."
+            placeHolder = "Serial number"
         case .Libre3HeartBeatType:
             transmitterIdTitleText = Texts_SettingsView.labelBluetoothDeviceName
             transmitterIdMessageText = Texts_SettingsView.heartbeatLibreMessage

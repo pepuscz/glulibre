@@ -69,8 +69,8 @@ struct JournalTodayView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button("Notifications", systemImage: "bell", action: alerts).disabled(!model.isReady)
-                        Button("Sensor & connection", systemImage: "sensor.tag.radiowaves.forward", action: sensor).disabled(!model.isReady)
-                        Button("Settings & integrations", systemImage: "gearshape", action: advanced)
+                        Button("Sensor", systemImage: "sensor.tag.radiowaves.forward", action: sensor).disabled(!model.isReady)
+                        Button("Settings", systemImage: "gearshape", action: advanced)
                     } label: { Image(systemName: "ellipsis.circle").accessibilityLabel("More glucose options") }
                 }
             }
@@ -95,7 +95,7 @@ struct JournalTodayView: View {
                 chartCard
                 captureButton
                 HStack {
-                    Text("Your journal").font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                    Text("Meals").font(.title2.bold()).accessibilityAddTraits(.isHeader)
                     Spacer()
                     Text("Today").font(.subheadline).foregroundStyle(.secondary)
                 }
@@ -160,7 +160,8 @@ struct JournalTodayView: View {
                         Text("No readings yet").font(.title2.bold())
                     }
                     if !model.isStale, model.latest != nil {
-                        Text(referenceTitle).font(.caption).foregroundStyle(referenceColor)
+                        Text(model.latestIsTrendOnly ? "Trend mode · Not calibrated" : referenceTitle)
+                            .font(.caption).foregroundStyle(model.latestIsTrendOnly ? Color.secondary : referenceColor)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 chartOptions
@@ -256,7 +257,7 @@ struct JournalChartLegend: View {
     var body: some View {
         HStack(spacing: 18) {
             Label("Meals", systemImage: "fork.knife").foregroundStyle(.orange)
-            Label("Activity", systemImage: "figure.run").foregroundStyle(.purple)
+            Label("Movement", systemImage: "figure.walk").foregroundStyle(.purple)
         }.font(.caption)
     }
 }
@@ -378,6 +379,12 @@ struct JournalGlucoseChart: View {
         .chartOverlay { proxy in
             GeometryReader { geometry in
                 let plot = geometry[proxy.plotAreaFrame]
+                let movement = MealMovement.visible(health.movement, in: interval, now: model.now)
+                if health.enabled && movement.contains(where: { ($0.steps ?? 0) > 0 }) {
+                    JournalMovementStrip(buckets: movement, interval: interval)
+                        .frame(width: plot.width, height: 14)
+                        .position(x: plot.midX, y: plot.maxY - 8)
+                }
                 ChartInspectionSurface { location in
                     inspectedDate = proxy.value(atX: min(max(0, location.x), plot.width), as: Date.self)
                 }
@@ -507,8 +514,8 @@ struct JournalListView: View {
                     if filtered.isEmpty {
                         JournalCard {
                             Image(systemName: query.isEmpty ? "camera.on.rectangle" : "magnifyingglass").font(.largeTitle).foregroundStyle(JournalStyle.accent)
-                            Text(query.isEmpty ? "Your food story starts here" : "No matching meals").font(.title2.bold())
-                            Text(query.isEmpty ? "Your meals and notes appear here." : "Try another name or note.").foregroundStyle(.secondary)
+                            Text(query.isEmpty ? "No meals yet" : "No matching meals").font(.title2.bold())
+                            if !query.isEmpty { Text("Try another name or note.").foregroundStyle(.secondary) }
                             if query.isEmpty { Button("Log your first meal", action: capture).buttonStyle(.borderedProminent) }
                         }
                     }
@@ -541,6 +548,7 @@ struct JournalMealDetail: View {
 }
 
 struct JournalMealDetailContent: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var model: JournalModel
     @ObservedObject private var health = JournalHealthContext.shared
     let mealID: UUID
@@ -562,10 +570,10 @@ struct JournalMealDetailContent: View {
                         }
                     }
                     response(meal)
-                    if !meal.userComment.isEmpty { JournalCard { Label("Your note", systemImage: "text.bubble").font(.headline); Text(meal.userComment) } }
-                    if health.enabled {
-                        JournalCard {
-                            Label("Health context", systemImage: "heart.text.clipboard").font(.headline)
+                    JournalCard {
+                        JournalMealMovement(health: health, date: model.occasion(for: meal).date, now: model.now)
+                        if health.enabled {
+                            Divider()
                             if let duration = health.sleepBefore(meal.eatenAt) {
                                 LabeledContent("Sleep · prior 24h", value: "\(Int(duration / 3600))h \(Int(duration.truncatingRemainder(dividingBy: 3600) / 60))m")
                             } else { Text("Sleep unavailable · prior 24h").foregroundStyle(.secondary) }
@@ -577,8 +585,9 @@ struct JournalMealDetailContent: View {
                             }
                         }
                     }
+                    if !meal.userComment.isEmpty { JournalCard { Label("Note", systemImage: "text.bubble").font(.headline); Text(meal.userComment) } }
                     JournalCard {
-                        HStack { Text("Foods & portions").font(.headline); Spacer(); Button("Edit") { editingMeal = true } }
+                        Text("Foods & portions").font(.headline)
                         if meal.foodItems.isEmpty {
                             Text("Add foods to find repeated meals.").foregroundStyle(.secondary)
                         }
@@ -590,8 +599,7 @@ struct JournalMealDetailContent: View {
                         } else if meal.analysis == nil || meal.status == .failed {
                             Button(meal.status == .failed ? "Retry photo analysis" : "Identify food from photo", action: analyzePhoto)
                         }
-                    }
-                    JournalCard {
+                        Divider()
                         DisclosureGroup("Nutrition & Apple Health") {
                             if let nutrients = meal.analysis?.nutrients {
                                 Text("\(nutrients.carbohydratesG.map { String(format: "%.0f g", $0) } ?? "Unknown") carbohydrates · estimate").font(.subheadline)
@@ -626,7 +634,7 @@ struct JournalMealDetailContent: View {
         let occasion = model.occasion(for: meal)
         let window = DateInterval(start: observation.interval.start.addingTimeInterval(-15 * 60), end: observation.interval.end)
         return JournalCard {
-            Label(occasion.meals.count > 1 ? "Together at this meal" : "After this meal", systemImage: "waveform.path").font(.headline)
+            Label("Glucose response", systemImage: "waveform.path").font(.headline)
             if occasion.meals.count > 1 {
                 ForEach(occasion.meals) { capture in
                     if let original = model.meals.first(where: { $0.id == capture.id }) {
@@ -646,20 +654,24 @@ struct JournalMealDetailContent: View {
             JournalGlucoseChart(model: model, points: model.mealPoints(for: meal), interval: window, meals: model.meals,
                 mealBaseline: observation.limitation == nil ? observation.baseline : nil,
                 mealPeak: observation.limitation == nil ? model.mealPoints(for: meal).filter { observation.interval.contains($0.date) }.max(by: { $0.mgDl < $1.mgDl }) : nil)
-            LabeledContent("Glucose coverage", value: "\(Int(observation.coverage * 100))%")
             if observation.hasNearbyMeal {
                 Label("Overlapping meals", systemImage: "fork.knife").font(.caption).foregroundStyle(.secondary)
             }
             if let limitation = observation.limitation {
                 Label(limitation, systemImage: "info.circle").font(.subheadline).foregroundStyle(.secondary)
             } else if let baseline = observation.baseline, let peak = observation.peak {
-                HStack {
+                let metricsLayout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+                    : AnyLayout(HStackLayout())
+                metricsLayout {
                     VStack(alignment: .leading) { Text("Before meal").font(.caption).foregroundStyle(.secondary); Text(model.formatted(baseline)).font(.title2.bold()) }
-                    Spacer()
-                    VStack(alignment: .trailing) { Text("Observed peak").font(.caption).foregroundStyle(.secondary); Text("\(model.formatted(peak)) \(model.unit)").font(.title2.bold()) }
+                    if !dynamicTypeSize.isAccessibilitySize { Spacer() }
+                    VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing) { Text("Observed peak").font(.caption).foregroundStyle(.secondary); Text("\(model.formatted(peak)) \(model.unit)").font(.title2.bold()) }
                 }
             }
-            DisclosureGroup("About this observation") {
+            DisclosureGroup("Observation details") {
+                LabeledContent("Glucose coverage", value: "\(Int(observation.coverage * 100))%")
+                    .accessibilityIdentifier("meal.glucoseCoverage")
                 Text("Photos within 30 minutes of the first share one window. Other nearby meals stay on the chart; their effects cannot be separated. This is an observed curve, not a food score.").font(.footnote).foregroundStyle(.secondary)
                 Button(meal.keepResponseSeparate == true ? "Group with nearby photos" : "Keep this photo separate") {
                     do {

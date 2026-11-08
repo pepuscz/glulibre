@@ -76,9 +76,10 @@ public final class CoreDataManager {
         let persistentStoreURL = documentsDirectoryURL.appendingPathComponent(storeName)
         
         do {
-            let options = [
+            let options: [String: Any] = [
                 NSMigratePersistentStoresAutomaticallyOption : true,
-                NSInferMappingModelAutomaticallyOption : true
+                NSInferMappingModelAutomaticallyOption : true,
+                NSPersistentStoreFileProtectionKey: FileProtectionType.completeUntilFirstUserAuthentication
             ]
             
             // Add Persistent Store

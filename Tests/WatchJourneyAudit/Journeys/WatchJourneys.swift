@@ -38,6 +38,22 @@ final class WatchJourneys: XCTestCase {
         XCTAssertTrue(app.staticTexts["watch.glucose"].isHittable)
     }
 
+    func testNotificationPresentation() {
+        let app = XCUIApplication(bundleIdentifier: "com.652PWHFDA9.libredebug.watchkitapp")
+        for mode in ["fresh", "stale", "missing"] {
+            app.launchArguments = ["--watch-demo", "--notification-preview", mode]
+            app.launch()
+            XCTAssertTrue(app.staticTexts[mode == "fresh" ? "Low glucose" : "Readings paused"].waitForExistence(timeout: 10))
+            XCTAssertFalse(app.staticTexts["LOW ALARM"].exists)
+            if mode == "stale" { XCTAssertTrue(app.staticTexts["Reading out of date"].exists) }
+            if mode != "fresh" {
+                XCTAssertTrue(app.staticTexts["Keep your iPhone near the sensor. Open GluLibre if readings don’t resume."].exists)
+            }
+            capture("Notification-" + mode, app: app)
+            app.terminate()
+        }
+    }
+
     func testOverlappingMealStillShowsObservedRise() {
         let app = XCUIApplication(bundleIdentifier: "com.652PWHFDA9.libredebug.watchkitapp")
         app.launchArguments = ["--watch-demo", "--watch-meal", "--watch-overlap"]

@@ -13,6 +13,7 @@ final class JournalModel: ObservableObject {
     }
     static let shared = JournalModel()
     @Published private(set) var points: [JournalGlucosePoint] = []
+    @Published private(set) var latestIsTrendOnly = false
     @Published private(set) var meals: [MealRecord] = []
     @Published private(set) var foodGroups: [FoodResponseGroup] = []
     private var foodPoints: [JournalGlucosePoint] = []
@@ -27,6 +28,7 @@ final class JournalModel: ObservableObject {
     private var accessor: BgReadingsAccessor?
     private weak var observedContext: NSManagedObjectContext?
     private var subscriptions = Set<AnyCancellable>()
+    private var recoveryIssue: String?
 
     private init() {
         NotificationCenter.default.publisher(for: .mealStoreDidChange)
@@ -65,10 +67,21 @@ final class JournalModel: ObservableObject {
     func refresh() {
         now = Date()
         if let accessor {
+            latestIsTrendOnly = accessor.getLatestBgReadings(limit: 1, fromDate: nil, forSensor: nil,
+                ignoreRawData: true, ignoreCalculatedValue: false).first?.deviceName?.hasSuffix(" · Trend mode") == true
             let snapshots = accessor.getLatestBgReadingSnapshots(limit: nil, fromDate: now.addingTimeInterval(-90 * 86400 - 900), forSensor: nil, ignoreRawData: true, ignoreCalculatedValue: false)
-            foodPoints = GlucoseObservations.valid(snapshots.map {
+            let livePoints = snapshots.map {
                 JournalGlucosePoint(date: $0.timeStamp, mgDl: $0.calculatedValue, sensorID: $0.sensorID)
-            }, now: now)
+            }
+            let liveDates = Set(livePoints.map(\.date))
+            var restoredPoints: [JournalGlucosePoint] = []
+            do {
+                restoredPoints = try JournalRecoveredHistory.shared.all().filter {
+                    $0.date >= now.addingTimeInterval(-90 * 86400 - 900) && !liveDates.contains($0.date)
+                }.map { JournalGlucosePoint(date: $0.date, mgDl: $0.mgDl, sensorID: $0.sensorID) }
+                recoveryIssue = nil
+            } catch { recoveryIssue = "Restored history could not be opened. Keep the app installed and try again after unlocking your iPhone." }
+            foodPoints = GlucoseObservations.valid(livePoints + restoredPoints, now: now)
             points = foodPoints.filter { $0.date >= now.addingTimeInterval(-14 * 86400) }
         }
         refreshUnits()
@@ -96,7 +109,7 @@ final class JournalModel: ObservableObject {
         if isReady && ProcessInfo.processInfo.arguments.contains("--food-preview") { useFoodPreview(); return }
         #endif
         meals = MealStore.shared.all()
-        storageIssue = MealStore.shared.loadError
+        storageIssue = MealStore.shared.loadError ?? recoveryIssue
         rebuildFoodGroups()
     }
 

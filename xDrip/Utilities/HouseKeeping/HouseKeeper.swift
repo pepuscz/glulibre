@@ -46,6 +46,7 @@ class HouseKeeper {
     /// - housekeeping activities to be done only once per app start up like delete old readings and calibrations in CoreData
     /// - cleanups are done asynchronously (ie function returns without waiting for the actual deletions
     public func doAppStartUpHouseKeeping() {
+        guard JournalStoragePolicy.removesOldHistory() else { return }
         
         // create private managed object context
         let managedObjectContext = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)

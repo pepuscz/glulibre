@@ -2,6 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>UTExportedTypeDeclarations</key>
+    <array><dict>
+        <key>UTTypeIdentifier</key><string>org.glulibre.journal-backup</string>
+        <key>UTTypeDescription</key><string>Encrypted GluLibre journal</string>
+        <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+        <key>UTTypeTagSpecification</key><dict>
+            <key>public.filename-extension</key><array><string>glulibre</string></array>
+        </dict>
+    </dict></array>
 	<key>AppGroupIdentifier</key>
 	<string>$(APP_GROUP_IDENTIFIER)</string>
 	<key>AppGroupIdentifierTrio</key>
@@ -83,7 +92,7 @@
 	<key>NSContactsUsageDescription</key>
 	<string>To update the contact photo with an image showing the current BG values</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Read meal nutrition, workouts, and sleep you choose to share, to show context alongside your glucose. Workouts and sleep stay on this device and are not sent to AI.</string>
+	<string>Read steps, walking distance, stand minutes, active energy, workouts, sleep and meal nutrition you choose to share, to show context alongside your glucose. Movement, workouts and sleep stay on this device and are not sent to AI.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Store glucose readings and confirmed meal nutrition.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

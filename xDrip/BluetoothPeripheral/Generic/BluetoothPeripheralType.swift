@@ -15,6 +15,8 @@ enum BluetoothPeripheralType: String, CaseIterable {
     
     /// Libre 2
     case Libre2Type = "Libre 2/2+ EU"
+
+    case smartGuide = "Accu-Chek SmartGuide"
     
     /// MiaoMiao
     case MiaoMiaoType = "MiaoMiao"
@@ -41,6 +43,8 @@ enum BluetoothPeripheralType: String, CaseIterable {
     func viewModel() -> BluetoothPeripheralViewModel? {
         
         switch self {
+        case .smartGuide:
+            return nil
             
         case .M5StackType:
             return M5StackBluetoothPeripheralViewModel()
@@ -78,6 +82,8 @@ enum BluetoothPeripheralType: String, CaseIterable {
     func createNewBluetoothPeripheral(withAddress address: String, withName name: String, nsManagedObjectContext: NSManagedObjectContext) -> BluetoothPeripheral {
         
         switch self {
+        case .smartGuide:
+            return BLEPeripheral.makeSmartGuide(address: address, name: name, context: nsManagedObjectContext)
             
         case .M5StackType:
             let newM5Stack = M5Stack(address: address, name: name, textColor: UserDefaults.standard.m5StackTextColor ?? ConstantsM5Stack.defaultTextColor, backGroundColor: ConstantsM5Stack.defaultBackGroundColor, rotation: ConstantsM5Stack.defaultRotation, brightness: 100, alias: nil, nsManagedObjectContext: nsManagedObjectContext)
@@ -126,7 +132,7 @@ enum BluetoothPeripheralType: String, CaseIterable {
         case .M5StackType, .M5StickCType:
             return .M5Stack
             
-        case .DexcomType, .BubbleType, .MiaoMiaoType, .Libre2Type, .DexcomG7Type:
+        case .DexcomType, .BubbleType, .MiaoMiaoType, .Libre2Type, .DexcomG7Type, .smartGuide:
             return .CGM
 
         case .Libre3HeartBeatType, .DexcomG7HeartBeatType, .OmniPodHeartBeatType:
@@ -141,7 +147,7 @@ enum BluetoothPeripheralType: String, CaseIterable {
         
         switch self {
             
-        case .DexcomType, .Libre3HeartBeatType, .DexcomG7Type, .DexcomG7HeartBeatType:
+        case .DexcomType, .Libre3HeartBeatType, .DexcomG7Type, .DexcomG7HeartBeatType, .smartGuide:
             return true
 
         default:
@@ -155,6 +161,8 @@ enum BluetoothPeripheralType: String, CaseIterable {
     func validateTransmitterId(transmitterId:String) -> String? {
         
         switch self {
+        case .smartGuide:
+            return SmartGuideProtocol.validSerial(transmitterId.uppercased()) ? nil : "Enter the full serial number from the blue cap, not the PIN."
             
         case .DexcomType:
             // length for G5 and G6 is 6

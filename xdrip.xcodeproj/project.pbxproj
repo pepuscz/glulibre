@@ -7,6 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        D4254B012026101600000001 = {isa = PBXBuildFile; fileRef = D4254A012026101600000001; };
+        D4254B022026101600000002 = {isa = PBXBuildFile; fileRef = D4254A022026101600000002; };
+        D4251B012026101500000001 = {isa = PBXBuildFile; fileRef = D4251A012026101500000001; };
+        D4251B022026101500000002 = {isa = PBXBuildFile; fileRef = D4251A022026101500000002; };
+        D4251B032026101500000003 = {isa = PBXBuildFile; fileRef = D4251A032026101500000003; };
+        D4252B042026101500000004 = {isa = PBXBuildFile; fileRef = D4252A042026101500000004; };
+        D4250B012026101500000001 = {isa = PBXBuildFile; fileRef = D4250A012026101500000001; };
+        D4250B022026101500000002 = {isa = PBXBuildFile; fileRef = D4250A022026101500000002; };
+        D4250B032026101500000003 = {isa = PBXBuildFile; fileRef = D4250A032026101500000003; };
         C0D3B2502026092000000001 /* Legal in Resources */ = {isa = PBXBuildFile; fileRef = C0D3A2502026092000000001 /* Legal */; };
         C0D3B2192026091900000019 = {isa = PBXBuildFile; fileRef = 47DE41AC2B863D370041DA19; };
         C0D3B2132026091900000013 = {isa = PBXBuildFile; fileRef = C0D3A2132026091900000013; };
@@ -69,9 +78,11 @@
 		4733B93E2AD17C99001D609D /* FollowerBgReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4733B93D2AD17C99001D609D /* FollowerBgReading.swift */; };
 		4733B9402AD17D15001D609D /* FollowerDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4733B93F2AD17D15001D609D /* FollowerDelegate.swift */; };
 		4734FF552BEFE3F200C7115A /* AlertNotificationDictionary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4734FF542BEFE3F200C7115A /* AlertNotificationDictionary.swift */; };
+        C0D342532026101600000001 /* AlertNotificationDictionary.swift in Watch */ = {isa = PBXBuildFile; fileRef = 4734FF542BEFE3F200C7115A; };
 		4734FF562BEFE3F200C7115A /* AlertNotificationDictionary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4734FF542BEFE3F200C7115A /* AlertNotificationDictionary.swift */; };
 		4734FF572BF13B9C00C7115A /* TextsCommon.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8BDD44F221CAA64006EAB84 /* TextsCommon.swift */; };
 		473775822C14D8C100525B90 /* NotificationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 473775812C14D8C100525B90 /* NotificationView.swift */; };
+        C0D342532026101600000002 /* NotificationView.swift for simulator audit */ = {isa = PBXBuildFile; fileRef = 473775812C14D8C100525B90; };
 		473775832C14DCA500525B90 /* GlucoseChartType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47C210ED2B5298EB00005711 /* GlucoseChartType.swift */; };
 		473775842C14DCA900525B90 /* ConstantsGlucoseChartSwiftUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4716A50C2B416EE100419052 /* ConstantsGlucoseChartSwiftUI.swift */; };
 		473775852C14DCC600525B90 /* GlucoseChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47C210EF2B52A05B00005711 /* GlucoseChartView.swift */; };
@@ -820,6 +831,15 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        D4254A012026101600000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealMovement.swift; sourceTree = "<group>"; };
+        D4254A022026101600000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalMovementViews.swift; sourceTree = "<group>"; };
+        D4251A012026101500000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = xDrip/BluetoothTransmitter/CGM/SmartGuide/SmartGuideProtocol.swift; sourceTree = SOURCE_ROOT; };
+        D4251A022026101500000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = xDrip/BluetoothTransmitter/CGM/SmartGuide/CGMSmartGuideTransmitter.swift; sourceTree = SOURCE_ROOT; };
+        D4251A032026101500000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = xDrip/BluetoothTransmitter/CGM/SmartGuide/SmartGuidePeripheral.swift; sourceTree = SOURCE_ROOT; };
+        D4252A042026101500000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = xDrip/BluetoothTransmitter/CGM/SmartGuide/SmartGuideCalibration.swift; sourceTree = SOURCE_ROOT; };
+        D4250A012026101500000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalBackupArchive.swift; sourceTree = "<group>"; };
+        D4250A022026101500000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalBackupService.swift; sourceTree = "<group>"; };
+        D4250A032026101500000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalBackupView.swift; sourceTree = "<group>"; };
         C0D3A2502026092000000001 /* Legal */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Legal; sourceTree = "<group>"; };
         C0D3A2132026091900000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealPhotoTime.swift; sourceTree = "<group>"; };
         C0D3A2142026091900000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealEditView.swift; sourceTree = "<group>"; };
@@ -1894,9 +1914,10 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+        D4251A002026101500000000 = {isa = PBXGroup; name = SmartGuide; sourceTree = "<group>"; children = (D4251A012026101500000001, D4251A022026101500000002, D4251A032026101500000003, D4252A042026101500000004); };
 		C0D3A2002026091900000000 /* Experience */ = {
 			isa = PBXGroup;
-			children = (C0D3A2012026091900000001, C0D3A2022026091900000002, C0D3A2032026091900000003, C0D3A2042026091900000004, C0D3A2052026091900000005, C0D3A2062026091900000006, C0D3A2072026091900000007, C0D3A2082026091900000008, C0D3A2092026091900000009, C0D3A2102026091900000010, C0D3A2112026091900000011, C0D3A2122026091900000012, C0D3A2132026091900000013, C0D3A2142026091900000014, C0D3A2152026091900000015, C0D3A2162026091900000016, C0D3A2172026091900000017, C0D3A2182026091900000018);
+			children = (D4254A012026101600000001, D4254A022026101600000002, D4250A012026101500000001, D4250A022026101500000002, D4250A032026101500000003, C0D3A2012026091900000001, C0D3A2022026091900000002, C0D3A2032026091900000003, C0D3A2042026091900000004, C0D3A2052026091900000005, C0D3A2062026091900000006, C0D3A2072026091900000007, C0D3A2082026091900000008, C0D3A2092026091900000009, C0D3A2102026091900000010, C0D3A2112026091900000011, C0D3A2122026091900000012, C0D3A2132026091900000013, C0D3A2142026091900000014, C0D3A2152026091900000015, C0D3A2162026091900000016, C0D3A2172026091900000017, C0D3A2182026091900000018);
 			path = Experience;
 			sourceTree = "<group>";
 		};
@@ -3456,6 +3477,7 @@
 		F8F971BA23A5915900C3F17D /* CGM */ = {
 			isa = PBXGroup;
 			children = (
+                D4251A002026101500000000,
 				F8F971BB23A5915900C3F17D /* Dexcom */,
 				F8F971F023A5915900C3F17D /* Generic */,
 				F8F971D623A5915900C3F17D /* Libre */,
@@ -4133,6 +4155,7 @@
 				47A6AC422B7D42ED0047A4BA /* TextsCommon.swift in Sources */,
 				47A6AC3B2B7D3F9B0047A4BA /* ConstantsGlucoseChartSwiftUI.swift in Sources */,
 				474822442C0108EA0052D4FB /* NotificationView.swift in Sources */,
+                C0D342532026101600000001 /* AlertNotificationDictionary.swift in Watch */,
 				47DE41B92B87B2680041DA19 /* ConstantsAppleWatch.swift in Sources */,
 				47CA61E82B9796D200C2A597 /* ConstantsFollower.swift in Sources */,
 				4746068B2B96380200AC9214 /* ConstantsLibreLinkUp.swift in Sources */,
@@ -4171,11 +4194,20 @@
 			buildActionMask = 2147483647;
 			files = (
 				C0D3B1012026082400000001 /* MealModels.swift in Sources */,
+                D4254B012026101600000001,
+                D4254B022026101600000002,
                 C0D3B2102026091900000010,
                 C0D3B1062026091900000006,
                 C0D3B1072026091900000007,
 				C0D3B2012026091900000001 /* GlucoseObservations.swift in Sources */,
                 C0D3B2112026091900000011,
+                D4250B012026101500000001,
+                D4251B012026101500000001,
+                D4251B022026101500000002,
+                D4251B032026101500000003,
+                D4252B042026101500000004,
+                D4250B022026101500000002,
+                D4250B032026101500000003,
                 C0D3B2132026091900000013,
                 C0D3B2142026091900000014,
                 C0D3B2152026091900000015,
@@ -4330,6 +4362,7 @@
 				F8AF36152455C6F700B5977B /* ConstantsTrace.swift in Sources */,
 				F8F971B723A5914D00C3F17D /* BluetoothPeripheralType.swift in Sources */,
 				4734FF552BEFE3F200C7115A /* AlertNotificationDictionary.swift in Sources */,
+                C0D342532026101600000002 /* NotificationView.swift for simulator audit */,
 				F80610C4222D4E4D00D8F236 /* ActionClosureable-extension.swift in Sources */,
 				F8F1670E27273EA7001AA3D8 /* GlucoseDataRxMessage.swift in Sources */,
 				F8B3A835227F08AC004BA588 /* PickerViewController.swift in Sources */,

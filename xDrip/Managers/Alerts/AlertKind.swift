@@ -456,6 +456,10 @@ public enum AlertKind: Int, CaseIterable {
             return Texts_Alerts.phoneBatteryLowAlertTitle
         }
     }
+
+    var notificationTitle: String {
+        AlertNotificationCopy(kind: rawValue, reading: "", unit: "").title
+    }
     
     /// for UI, when value is requested, text should show also the unit (eg mgdl, mmol, minutes, days ...)
     /// What is this text ?

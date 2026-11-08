@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct JournalSettingsView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var model: JournalModel
     @ObservedObject var preferences: JournalPreferences
     @ObservedObject var management: JournalManagement
@@ -12,21 +13,21 @@ struct JournalSettingsView: View {
                     NavigationLink {
                         JournalSensorView(model: model, management: management)
                     } label: {
-                        settingsRow("Sensor", subtitle: model.isStale ? "Check reading status" : model.freshness, icon: "sensor.tag.radiowaves.forward", color: JournalStyle.accent)
+                        settingsRow("Sensor", icon: "sensor.tag.radiowaves.forward", color: JournalStyle.accent)
                     }
                     NavigationLink {
                         JournalNotificationsView(preferences: preferences, management: management)
-                    } label: { settingsRow("Notifications", subtitle: "Glucose alerts & visibility", icon: "bell.badge", color: .orange) }
+                    } label: { settingsRow("Notifications", icon: "bell.badge", color: .orange) }
                 }
                 Section("Connected services") {
                     NavigationLink { JournalWatchSettingsView(preferences: preferences) } label: {
-                        settingsRow("Apple Watch", subtitle: "Glucose & trend on your watch face", icon: "applewatch", color: JournalStyle.accent)
+                        settingsRow("Apple Watch", icon: "applewatch", color: JournalStyle.accent)
                     }.accessibilityIdentifier("settings.watch")
                     NavigationLink { JournalHealthSettingsView(preferences: preferences) } label: {
-                        settingsRow("Apple Health", subtitle: "Choose what to share", icon: "heart.fill", color: .pink)
+                        settingsRow("Apple Health", icon: "heart.fill", color: .pink)
                     }
                     NavigationLink { JournalAISettingsView(preferences: preferences) } label: {
-                        settingsRow("Meal analysis", subtitle: preferences.hasKey ? "OpenAI key saved" : "Optional photo estimates", icon: "sparkles", color: .indigo)
+                        settingsRow("Meal analysis", icon: "sparkles", color: .indigo)
                     }
                     NavigationLink { connections } label: { Label("Other connections", systemImage: "point.3.connected.trianglepath.dotted") }
                 }
@@ -38,6 +39,9 @@ struct JournalSettingsView: View {
                     NavigationLink { JournalPrivacyView(management: management) } label: { Label("Privacy & data", systemImage: "hand.raised") }
                 } header: { Text("Preferences") }
                 Section {
+                    NavigationLink { JournalBackupView(management: management) } label: {
+                        Label("Backup & restore", systemImage: "externaldrive.badge.checkmark")
+                    }.accessibilityIdentifier("settings.backup")
                     NavigationLink { JournalSavedRecordsView(management: management) } label: { Label("Saved records", systemImage: "archivebox") }
                     NavigationLink { support } label: { Label("Help & sensor care", systemImage: "questionmark.circle") }
                     NavigationLink { JournalLegalView() } label: { Label("About & licenses", systemImage: "info.circle") }
@@ -80,13 +84,13 @@ struct JournalSettingsView: View {
         }.navigationTitle("Help").navigationBarTitleDisplayMode(.inline)
     }
 
-    private func settingsRow(_ title: String, subtitle: String, icon: String, color: Color) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: icon).font(.title3).foregroundStyle(color).frame(width: 28).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).foregroundStyle(.primary)
-                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
-            }.padding(.vertical, 4)
+    @ViewBuilder private func settingsRow(_ title: String, icon: String, color: Color) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            Text(title).foregroundStyle(.primary)
+        } else {
+            Label { Text(title).foregroundStyle(.primary) } icon: {
+                Image(systemName: icon).foregroundStyle(color)
+            }
         }
     }
 }
@@ -111,7 +115,7 @@ private struct JournalLegalView: View {
         List {
             Section(ConstantsHomeView.applicationName) {
                 Text("An experimental meal and glucose journal, built on xDrip4iOS.")
-                Text("Modified fork · 24 August–20 September 2026").font(.subheadline).foregroundStyle(.secondary)
+                Text("Modified fork · 24 August–15 October 2026").font(.subheadline).foregroundStyle(.secondary)
                 Link("Source code", destination: URL(string: ConstantsHomeView.gitHubURL)!)
                 Link("Upstream xDrip4iOS", destination: URL(string: "https://github.com/JohanDegraeve/xdripswift")!)
             }
@@ -151,33 +155,38 @@ struct JournalSensorView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Image(systemName: "sensor.tag.radiowaves.forward").font(.largeTitle).foregroundStyle(JournalStyle.accent).accessibilityHidden(true)
                     Text(model.sensor.name).font(.title2.bold())
-                    Label(management.isWarmingUp ? "Warming up" : model.latest == nil ? "Waiting for readings" : model.isStale ? "Readings are delayed" : "Receiving readings", systemImage: model.isStale ? "clock" : "checkmark.circle")
-                        .foregroundStyle(model.isStale ? Color.secondary : JournalStyle.accent)
-                    Text(model.freshness).font(.subheadline).foregroundStyle(.secondary)
+                    if model.sensor.hasDevice {
+                        Label(management.isWarmingUp ? "Warming up" : model.latest == nil ? "Waiting for readings" : model.isStale ? "Readings are delayed" : "Receiving readings", systemImage: model.isStale ? "clock" : "checkmark.circle")
+                            .foregroundStyle(model.isStale ? Color.secondary : JournalStyle.accent)
+                    }
+                    if model.latest != nil { Text(model.freshness).font(.subheadline).foregroundStyle(.secondary) }
                     if management.isWarmingUp, let end = management.warmupEnd { Text(end, style: .timer).font(.title.monospacedDigit()) }
                 }.padding(.vertical, 8)
             }
-            Section("Connection") {
-                LabeledContent("Bluetooth", value: model.sensor.link)
-                if let device = model.sensor.deviceName { LabeledContent("Device", value: device) }
-                if let started = model.sensor.startedAt {
-                    LabeledContent("Sensor started", value: started.formatted(date: .abbreviated, time: .shortened))
-                }
-                if model.sensor.hasDevice {
+            if model.sensor.hasDevice {
+                Section("Connection") {
+                    LabeledContent("Bluetooth", value: model.sensor.link)
+                    if let device = model.sensor.deviceName { LabeledContent("Device", value: device) }
+                    if let started = model.sensor.startedAt {
+                        LabeledContent("Sensor started", value: started.formatted(date: .abbreviated, time: .shortened))
+                    }
                     LabeledContent("Automatic reconnection", value: model.sensor.connectionEnabled ? "Enabled" : "Disabled")
                 }
+                Section {
+                    Text(management.isWarmingUp ? "We’ll notify you when warm-up finishes. No scanning needed now." : model.isStale
+                         ? "Keep your phone nearby with Bluetooth on. Don’t re-pair to fix a brief delay."
+                         : "Readings continue in the background. Don’t force-quit the app.")
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text(management.isWarmingUp ? "Warm-up" : model.isStale ? "Check connection" : "Connected")
+                }
             }
-            Section {
-                Text(management.isWarmingUp ? "We’ll notify you when warm-up finishes. No scanning needed now." : model.isStale
-                     ? "Keep your phone nearby with Bluetooth on. Don’t re-pair to fix a brief delay."
-                     : "Readings continue in the background. Don’t force-quit the app.")
-                    .foregroundStyle(.secondary)
-            } header: { Text(model.isStale ? "Check connection" : "Connected") }
             Section {
                 if model.isStale && model.sensor.hasDevice && !management.isWarmingUp {
                     Button("Reconnect Bluetooth", systemImage: "arrow.clockwise") { management.reconnect() }.disabled(!model.isReady)
                 }
                 NavigationLink(model.sensor.hasDevice ? "Replace or finish sensor setup" : "Set up a sensor") { JournalSensorSetupView(model: model, management: management) }
+                    .accessibilityIdentifier("sensor.setup")
                     .disabled(!model.isReady)
                 NavigationLink("Device details") { JournalDeviceDetailsView(management: management) }
             }
@@ -200,7 +209,7 @@ struct JournalNotificationsView: View {
                     if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) }
                 }
             }
-            Section("When it matters") {
+            Section("Alerts") {
                 ForEach(preferences.alarmSummaries) { alarm in
                     LabeledContent(alarm.title, value: alarm.value)
                 }
@@ -209,7 +218,7 @@ struct JournalNotificationsView: View {
             Section {
                 NavigationLink("Customize alarms") { JournalAlarmList(management: management) }
             } footer: { Text("Uses your saved alarms. iOS notification permission is required.") }
-            Section("At a glance") {
+            Section("App icon") {
                 Toggle("Glucose on app badge", isOn: Binding(get: { preferences.readingBadge }, set: preferences.setReadingBadge))
             }
         }.navigationTitle("Notifications").navigationBarTitleDisplayMode(.inline)
@@ -227,12 +236,14 @@ struct JournalHealthSettingsView: View {
             Section {
                 Toggle("Share glucose readings", isOn: Binding(get: { preferences.glucoseToHealth }, set: preferences.setGlucoseToHealth))
                 Toggle("Export confirmed meals", isOn: Binding(get: { preferences.mealsToHealth }, set: preferences.setMealsToHealth))
-            } header: { Text("Apple Health") } footer: {
+            } header: { Text("Write to Health") } footer: {
                 Text("Confirmed nutrition only. Photos and notes stay out of Health.")
             }
-            Section("Your permissions") {
-                Text("Manage access in Health → your profile → Apps → \(ConstantsHomeView.applicationName).")
-                    .foregroundStyle(.secondary)
+            Section {
+                DisclosureGroup("Manage permissions") {
+                    Text("Manage access in Health → your profile → Apps → \(ConstantsHomeView.applicationName).")
+                        .foregroundStyle(.secondary)
+                }
             }
         }.navigationTitle("Apple Health").navigationBarTitleDisplayMode(.inline)
             .alert("Apple Health", isPresented: Binding(get: { preferences.message != nil }, set: { if !$0 { preferences.message = nil } })) {
@@ -253,14 +264,11 @@ struct JournalAISettingsView: View {
             Section {
                 Label(preferences.hasKey ? "API key saved" : "Use your own API key", systemImage: preferences.hasKey ? "checkmark.shield" : "key")
                 Button(preferences.hasKey ? "Replace API key" : "Add OpenAI API key") { editingKey = true }
-            } footer: { Text("Photos and notes work without AI. Your key is stored in Keychain. OpenAI usage may incur charges.") }
+            } footer: { Text("Key stored in Keychain. OpenAI usage may incur charges.") }
             Section {
                 Toggle("Automatic meal analysis", isOn: Binding(get: { preferences.automaticMealAnalysis }, set: preferences.setAutomaticMealAnalysis))
-                if !preferences.hasKey {
-                    Text("Add a key to analyze meal photos.").font(.subheadline).foregroundStyle(.secondary)
-                }
             } footer: {
-                Text("When on, new photos and notes are sent to OpenAI with your key. Older meals aren’t sent automatically. Review estimates before Health export.")
+                Text("With a key, this sends new photos and notes to OpenAI. Older meals aren’t sent automatically. Photos and notes work without AI.")
             }
             Section {
                 TextField("Model ID", text: $modelName)
@@ -275,7 +283,7 @@ struct JournalAISettingsView: View {
                 .accessibilityIdentifier("journal.ai.saveModel")
                 if saved { Label("Model saved", systemImage: "checkmark.circle").font(.subheadline).foregroundStyle(.secondary) }
             } header: { Text("AI model") } footer: {
-                Text("Enter an OpenAI model ID. It must support images and structured outputs through the Responses API. Changes apply to the next analysis; saved meals stay unchanged.")
+                Text("Use a model with image and structured-output support in the Responses API. Applies to future analyses.")
             }
             if preferences.hasKey {
                 Section {
@@ -328,10 +336,11 @@ struct JournalPrivacyView: View {
                 Label("OpenAI: photos and notes you analyze", systemImage: "sparkles")
                 Text("New meals are sent automatically when enabled in Meal analysis. Your older journal isn’t sent automatically.").foregroundStyle(.secondary)
                 Label("Apple Health: when enabled & authorized", systemImage: "heart")
-                Text("Workouts and sleep stay on this iPhone and aren’t sent to OpenAI.").foregroundStyle(.secondary)
+                Text("Movement, workouts and sleep stay on this iPhone and aren’t sent to OpenAI.").foregroundStyle(.secondary)
                 Text("Review other sharing in Settings → Other connections.").foregroundStyle(.secondary)
             }
             Section {
+                NavigationLink("Backup & restore") { JournalBackupView(management: management) }
                 if let adapter = management.settingsProvider(.data) {
                     NavigationLink("Storage & export") { JournalStorageView(model: adapter) }
                 }

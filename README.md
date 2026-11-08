@@ -32,17 +32,21 @@ Curious about longevity? Explore your own patterns around familiar meals. Sincla
 
 ## Get started
 
-Self-built and experimental. Tested with **Libre 2 Plus EU**; other sensors are not verified. [Build guide](docs/DEVELOPMENT.md).
+Self-built and experimental. Tested with **Libre 2 Plus EU**. SmartGuide support is experimental. [Build guide](docs/DEVELOPMENT.md).
+
+[SmartGuide](docs/SMARTGUIDE.md): direct setup and trend-mode readings tested on a Czech sensor. Meter calibration is implemented; physical verification is pending.
 
 Optional food AI uses your OpenAI key and sends meal photos and notes for analysis. Photos and notes work without it. [Data details](docs/PRIVACY.md).
 
 Upgrade in place with the same signing and bundle identifiers—**don't uninstall** a working app.
 
+**Keep your journal.** Settings → Backup & restore exports password-encrypted meals, photos and glucose history. Restore adds missing records without changing sensor pairing. [Storage details](docs/STORAGE_AND_RECOVERY.md).
+
 For personal observation, not diagnosis or medication decisions. Comparisons concern whole meals, not proof that one ingredient caused a spike.
 
 ## Open source
 
-Modified fork of [xDrip4iOS](https://github.com/JohanDegraeve/xdripswift) by Johan Degraeve and contributors. Changes: 24 August–23 September 2026. [GPL-3.0-or-later](LICENSE), without warranty. [Full notices](NOTICE.md).
+Modified fork of [xDrip4iOS](https://github.com/JohanDegraeve/xdripswift) by Johan Degraeve and contributors. Changes: 24 August–8 November 2026. [GPL-3.0-or-later](LICENSE), without warranty. [Full notices](NOTICE.md).
 
 This product includes software developed by the "Marcin Krzyzanowski" (http://krzyzanowskim.com/). Legacy icons: [Icons8](https://icons8.com/).
 

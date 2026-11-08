@@ -582,7 +582,7 @@ public class AlertManager: NSObject {
         }
         
         // check if alert is required
-        let (alertNeeded, alertBody, alertTitle, delayInSeconds) = alertKind.alertNeeded(currentAlertEntry: currentAlertEntry, nextAlertEntry: nextAlertEntry, lastBgReading: lastBgReading, lastButOneBgReading, lastCalibration: lastCalibration, transmitterBatteryInfo: transmitterBatteryInfo)
+        let (alertNeeded, alertBody, _, delayInSeconds) = alertKind.alertNeeded(currentAlertEntry: currentAlertEntry, nextAlertEntry: nextAlertEntry, lastBgReading: lastBgReading, lastButOneBgReading, lastCalibration: lastCalibration, transmitterBatteryInfo: transmitterBatteryInfo)
         
         // create a new property for delayInSeconds, if it's nil then set to 0 - because returnvalue might either be nil or 0, to be treated in the same way
         var delayInSecondsToUse = delayInSeconds == nil ? 0 : delayInSeconds!
@@ -619,17 +619,16 @@ public class AlertManager: NSObject {
             // create the content for the alert notification, set body and text, category and also attachments and userInfo dict if available
             let content = UNMutableNotificationContent()
             
-            // set body, title for the standard notification (this will only be used for the short view in both iOS and WatchOS)
-            // after testing, the notification seems much clearer if we just use a single title line and include both title + body
-            // we'll put an emoji prefix just to give the notification a bit more character
-            if let alertTitle = alertTitle, let alertBody = alertBody {
-                content.title = alertKind.alertUrgencyType().alertTitlePrefix + " " + alertTitle.uppercased() + " " + alertBody
-            }
+            let copy = AlertNotificationCopy(kind: alertKind.rawValue,
+                reading: alertBody?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+                unit: isMgDl ? "mg/dL" : "mmol/L", isLocalSensor: UserDefaults.standard.isMaster)
+            content.title = copy.title
+            content.body = copy.body
             
             // now let's start creating the custom content
             var alertNotificationDictionary = AlertNotificationDictionary()
             
-            alertNotificationDictionary.alertTitle = alertKind.alertTitle().uppercased()
+            alertNotificationDictionary.alertTitle = copy.title
             alertNotificationDictionary.alertUrgencyTypeRawValue = alertKind.alertUrgencyType().rawValue
             
             // create two simple arrays to send to the live activiy. One with the bg values in mg/dL and another with the corresponding timestamps
@@ -685,9 +684,10 @@ public class AlertManager: NSObject {
             }
             
             // add a small BG chart image as an attachment to the notification content
-            let thumbnailAttachment = try! UNNotificationAttachment(identifier: "thumbnail", url: URL.documentsDirectory.appendingPathComponent("\(ConstantsGlucoseChartSwiftUI.filenameNotificationThumbnailImage).png"), options: [UNNotificationAttachmentOptionsThumbnailHiddenKey: false])
-            
-            content.attachments = [thumbnailAttachment]
+            // A missing preview must never prevent the alert from being delivered.
+            if let thumbnailAttachment = try? UNNotificationAttachment(identifier: "thumbnail", url: URL.documentsDirectory.appendingPathComponent("\(ConstantsGlucoseChartSwiftUI.filenameNotificationThumbnailImage).png"), options: [UNNotificationAttachmentOptionsThumbnailHiddenKey: false]) {
+                content.attachments = [thumbnailAttachment]
+            }
             
             // if snooze from notification in homescreen is needed then set the categoryIdentifier
             if applicableAlertType.snooze {

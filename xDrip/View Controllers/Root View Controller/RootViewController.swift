@@ -1260,6 +1260,7 @@ final class RootViewController: UIViewController, ObservableObject {
         // discovery at launch. This deliberately bypasses the setup UI and
         // never sends another NFC command to the sensor.
         if let bluetoothPeripheralManager,
+           !bluetoothPeripheralManager.getBluetoothPeripherals().contains(where: { $0.bluetoothPeripheralType() == .smartGuide }),
            let sensorUID = UserDefaults.standard.libreSensorUID,
            let patchInfo = UserDefaults.standard.librePatchInfo,
            let sensorSerialNumber = LibreSensorSerialNumber(withUID: sensorUID, with: LibreSensorType.type(patchInfo: patchInfo.toHexString()))?.serialNumber {
@@ -1430,7 +1431,8 @@ final class RootViewController: UIViewController, ObservableObject {
             // now check if we'll delete readings
             // there must be a glucoseData.last, here assigning oldestGlucoseData just to unwrap it
             // checking oldestGlucoseData.timeStamp < timeStampToDelete guarantees the oldest reading is older than the one we'll delete, so we're sur we have enough readings in glucoseData to refill the BgReadings
-            if let oldestGlucoseData = glucoseData.last, oldestGlucoseData.timeStamp < timeStampToDelete, UserDefaults.standard.smoothLibreValues  {
+            if cgmTransmitter.cgmTransmitterType() != .smartGuide,
+               let oldestGlucoseData = glucoseData.last, oldestGlucoseData.timeStamp < timeStampToDelete, UserDefaults.standard.smoothLibreValues  {
                 // older than the timestamp of the latest calibration (would only be applicable if recalibration is used)
                 if let lastCalibrationForActiveSensor = lastCalibrationForActiveSensor {
                     timeStampToDelete = max(timeStampToDelete, lastCalibrationForActiveSensor.timeStamp)
@@ -1508,7 +1510,7 @@ final class RootViewController: UIViewController, ObservableObject {
                 if (glucose.timeStamp > checktimestamp || ((index == 0) && (glucose.timeStamp > timeStampLastBgReading.addingTimeInterval(10)))) {
                     // check on glucoseLevelRaw > 0 because I've had a case where a faulty sensor was giving negative values
                     if glucose.glucoseLevelRaw > 0 {
-                        let newReading = calibrator.createNewBgReading(rawData: glucose.glucoseLevelRaw, timeStamp: glucose.timeStamp, sensor: activeSensor, last3Readings: &latest3BgReadings, lastCalibrationsForActiveSensorInLastXDays: &lastCalibrationsForActiveSensorInLastXDays, firstCalibration: firstCalibrationForActiveSensor, lastCalibration: lastCalibrationForActiveSensor, deviceName: self.getCGMTransmitterDeviceName(for: cgmTransmitter), nsManagedObjectContext: coreDataManager.mainManagedObjectContext)
+                        let newReading = calibrator.createNewBgReading(rawData: glucose.glucoseLevelRaw, timeStamp: glucose.timeStamp, sensor: activeSensor, last3Readings: &latest3BgReadings, lastCalibrationsForActiveSensorInLastXDays: &lastCalibrationsForActiveSensorInLastXDays, firstCalibration: firstCalibrationForActiveSensor, lastCalibration: lastCalibrationForActiveSensor, deviceName: glucose.isTrendOnly ? (self.getCGMTransmitterDeviceName(for: cgmTransmitter) ?? "SmartGuide") + " · Trend mode" : self.getCGMTransmitterDeviceName(for: cgmTransmitter), nsManagedObjectContext: coreDataManager.mainManagedObjectContext)
                         
                         if UserDefaults.standard.addDebugLevelLogsInTraceFileAndNSLog {
                             trace("in processNewGlucoseData, new reading created, timestamp = %{public}@, calculatedValue = %{public}@", log: self.log, category: ConstantsLog.categoryRootView, type: .info, newReading.timeStamp.description(with: .current), newReading.calculatedValue.description.replacingOccurrences(of: ".", with: ","))
@@ -1536,7 +1538,7 @@ final class RootViewController: UIViewController, ObservableObject {
                     // loopdelay > 0, LoopManager will use loopShareGoucoseData
                     // create a reading just to be able to fill up loopShareGoucoseData, to have them per minute
                     
-                    let newReading = calibrator.createNewBgReading(rawData: glucose.glucoseLevelRaw, timeStamp: glucose.timeStamp, sensor: activeSensor, last3Readings: &latest3BgReadings, lastCalibrationsForActiveSensorInLastXDays: &lastCalibrationsForActiveSensorInLastXDays, firstCalibration: firstCalibrationForActiveSensor, lastCalibration: lastCalibrationForActiveSensor, deviceName: self.getCGMTransmitterDeviceName(for: cgmTransmitter), nsManagedObjectContext: coreDataManager.mainManagedObjectContext)
+                    let newReading = calibrator.createNewBgReading(rawData: glucose.glucoseLevelRaw, timeStamp: glucose.timeStamp, sensor: activeSensor, last3Readings: &latest3BgReadings, lastCalibrationsForActiveSensorInLastXDays: &lastCalibrationsForActiveSensorInLastXDays, firstCalibration: firstCalibrationForActiveSensor, lastCalibration: lastCalibrationForActiveSensor, deviceName: glucose.isTrendOnly ? (self.getCGMTransmitterDeviceName(for: cgmTransmitter) ?? "SmartGuide") + " · Trend mode" : self.getCGMTransmitterDeviceName(for: cgmTransmitter), nsManagedObjectContext: coreDataManager.mainManagedObjectContext)
                     
                     loopManager?.glucoseData.insert(GlucoseData(timeStamp: newReading.timeStamp, glucoseLevelRaw: round(newReading.calculatedValue), slopeOrdinal: newReading.slopeOrdinal(), slopeName: newReading.slopeName), at: 0)
                     
@@ -2053,7 +2055,7 @@ final class RootViewController: UIViewController, ObservableObject {
                 calibrator = DexcomCalibrator()
             }
             
-        case .dexcomG7:
+        case .dexcomG7, .smartGuide:
             // received values are already calibrated
             calibrator = NoCalibrator()
             
@@ -3872,6 +3874,11 @@ extension RootViewController: UITabBarControllerDelegate {
         case nil: snapshot.link = snapshot.connectionEnabled ? "Waiting for connection" : "Connection disabled"
         @unknown default: snapshot.link = "Status unavailable"
         }
+        if peripheral.bluetoothPeripheralType() == .smartGuide,
+           SmartGuideConnectionState.shared.serial == peripheral.blePeripheral.smartGuideSerial,
+           snapshot.connectionEnabled {
+            snapshot.link = SmartGuideConnectionState.shared.message
+        }
         return snapshot
     }
 
@@ -3949,7 +3956,7 @@ extension RootViewController: UNUserNotificationCenterDelegate {
         } else if response.notification.request.identifier == ConstantsNotifications.NotificationIdentifierForTransmitterNeedsPairing.transmitterNeedsPairing {
             // nothing required, the pairing function will be called as it's been added to ApplicationManager in function cgmTransmitterNeedsPairing
         } else if response.notification.request.identifier.hasPrefix(LibreNFC.diagnosticWarmupNotificationIdentifierPrefix) {
-            journalExperience?.showSensorSetup()
+            journalExperience?.showLibreSetup()
         } else {
             handleAlarmNotificationResponse(identifier: response.notification.request.identifier,
                                             actionIdentifier: response.actionIdentifier, response: response)

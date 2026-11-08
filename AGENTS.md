@@ -19,6 +19,7 @@ An open, local-first iPhone + Watch companion for longevity-curious people:
 - Preserve originals, timestamps, corrections and provenance. AI estimates food, not glucose. Health context stays local; sharing is opt-in, nutrition export requires confirmation, historical photos never auto-upload.
 - Reuse sensor/persistence engines through testable adapters. Separate capture, extraction, deterministic analysis and UI; no duplicate stacks.
 - Upgrade in place: preserve identities, app groups, Keychain, schemas, preferences and sensor state. Never uninstall/reset/NFC-reactivate for a UI fix. Retain GPL/upstream notices.
+- Recovery is a product feature: protected local storage, no default history pruning, encrypted portable backups with tested idempotent restore. Imported history must never enter sensor/alert pipelines or requeue AI. No automatic health-data CloudKit uploads; see [storage design](docs/STORAGE_AND_RECOVERY.md).
 - Test journeys visually, including accessibility and Watch/Crown. Fixtures are simulator-only. Verify installed versions/data preservation; builds do not prove physical/background behavior. No publishing private data without permission.
 
 ## Read when relevant

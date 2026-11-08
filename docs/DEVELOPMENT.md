@@ -46,6 +46,13 @@ Debug simulator arguments provide synthetic fixtures. **Never run those fixture 
 
 Keep presentation separate from sensor ownership and persistence. New screens should adapt the existing engine, not create a second Bluetooth manager. Study [contribution boundaries](../CONTRIBUTING.md) before removing inherited functionality.
 
+Notification presentation uses `AlertNotificationCopy` and
+`AlertNotificationPresentation` across iPhone and Watch: sentence-case event
+titles, concise next steps, explicit units and no invented readings/timestamps.
+Expanded notifications must mark stale values, not present them as current.
+Copy changes must not change saved thresholds, sounds, snoozes or one-outage
+delivery policy. Follow Apple’s [notification guidance](https://developer.apple.com/design/human-interface-guidelines/notifications).
+
 ## Source and releases
 
 Keep the workspace's `Package.resolved` committed; inspect dependency updates together with their licenses. Do not change the model ID into a compiled list: requests read the user's saved setting.

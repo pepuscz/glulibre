@@ -1,5 +1,6 @@
 import CoreData
 import SwiftUI
+import os
 
 /// Presentation services reuse the live managers. Opening a screen never starts NFC,
 /// replaces a transmitter, changes alarms, or migrates the user's database.
@@ -13,6 +14,112 @@ final class JournalManagement: ObservableObject {
   @Published private(set) var alarms: [AlertEntry] = []
   @Published private(set) var records: [TreatmentEntry] = []
   @Published private(set) var devices: [BluetoothPeripheral] = []
+
+  var isSearchingForSmartGuide: Bool {
+    guard let manager = managerProvider(),
+          let transmitter = manager.tempBlueToothTransmitterWhileScanningForNewBluetoothPeripheral as? CGMSmartGuideTransmitter else { return false }
+    return !manager.getBluetoothPeripherals().contains { $0.blePeripheral.address == transmitter.deviceAddress }
+  }
+
+  func connectSmartGuide(serial input: String) {
+    message = nil
+    let state = SmartGuideConnectionState.shared
+    let diagnosticLog = OSLog(subsystem: ConstantsLog.subSystem, category: "SmartGuide")
+    func report(_ text: String) {
+      state.message = text
+      trace("%{public}@", log: diagnosticLog, category: "SmartGuide", type: .info, text)
+    }
+    let serial = input.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    state.serial = serial
+    report("Checking connection…")
+    guard SmartGuideProtocol.validSerial(serial) else {
+      report("Enter the full serial number from the blue cap, not the PIN.")
+      return
+    }
+    guard let manager = managerProvider() else {
+      report("Sensor connection service is unavailable. Close and reopen the app.")
+      return
+    }
+    guard UserDefaults.standard.isMaster else {
+      report("Direct sensor collection must be enabled in Reading source.")
+      return
+    }
+    guard !manager.getBluetoothPeripherals().contains(where: {
+      $0.blePeripheral.shouldconnect && $0.bluetoothPeripheralType().category() == .CGM
+        && !($0.blePeripheral.isSmartGuide && $0.blePeripheral.smartGuideSerial == serial)
+    }) else {
+      report("Another sensor is enabled. Pause it in Saved devices before connecting SmartGuide. Its history and pairing will be kept.")
+      return
+    }
+    if let saved = manager.getBluetoothPeripherals().first(where: {
+      $0.blePeripheral.isSmartGuide && $0.blePeripheral.smartGuideSerial == serial
+    }) {
+      saved.blePeripheral.shouldconnect = true
+      persistChanges()
+      guard let transmitter = manager.getBluetoothTransmitter(for: saved, createANewOneIfNecesssary: true) as? CGMSmartGuideTransmitter else {
+        report("Sensor connection service is unavailable. Close and reopen the app.")
+        return
+      }
+      report("Reconnecting to your sensor…")
+      transmitter.retry()
+      return
+    }
+    if let temporary = manager.tempBlueToothTransmitterWhileScanningForNewBluetoothPeripheral {
+      guard let smartGuide = temporary as? CGMSmartGuideTransmitter else {
+        report("Another sensor setup is in progress. Finish it before connecting SmartGuide.")
+        return
+      }
+      if smartGuide.serial == serial { report("Reconnecting to your sensor…"); smartGuide.retry(); return }
+      smartGuide.pauseCollection()
+      temporary.stopScanning()
+      temporary.disconnectAndForget()
+      temporary.prepareForRelease()
+    }
+    SmartGuideConnectionState.shared.serial = serial
+    report("Searching for your sensor…")
+    let transmitter = manager.createNewTransmitter(type: .smartGuide, transmitterId: serial, bluetoothTransmitterDelegate: nil)
+    manager.transmitterTypeBeingScannedFor = .smartGuide
+    manager.tempBlueToothTransmitterWhileScanningForNewBluetoothPeripheral = transmitter
+    manager.callBackAfterDiscoveringDevice = { [weak self] _ in
+      DispatchQueue.main.async {
+        self?.refresh()
+        JournalModel.shared.refreshSensor()
+      }
+    }
+    transmitter.connect()
+  }
+
+  func initializeSmartGuide(serial: String) {
+    guard let manager = managerProvider(),
+          let transmitter = manager.tempBlueToothTransmitterWhileScanningForNewBluetoothPeripheral as? CGMSmartGuideTransmitter,
+          transmitter.serial == serial.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() else { return }
+    transmitter.initializeNewSensor()
+  }
+
+  func cancelSmartGuideSearch() {
+    guard let manager = managerProvider(),
+          let transmitter = manager.tempBlueToothTransmitterWhileScanningForNewBluetoothPeripheral as? CGMSmartGuideTransmitter,
+          !manager.getBluetoothPeripherals().contains(where: { $0.blePeripheral.address == transmitter.deviceAddress }) else { return }
+    transmitter.pauseCollection()
+    transmitter.stopScanning()
+    transmitter.disconnectAndForget()
+    transmitter.prepareForRelease()
+    manager.tempBlueToothTransmitterWhileScanningForNewBluetoothPeripheral = nil
+    manager.callBackAfterDiscoveringDevice = nil
+    SmartGuideConnectionState.shared.message = "Search stopped"
+  }
+
+  func calibrateSmartGuide(serial: String, input: SmartGuideCalibration.Input, completion: @escaping (String) -> Void) {
+    guard let transmitter = managerProvider()?.getCGMTransmitter() as? CGMSmartGuideTransmitter,
+          transmitter.serial == serial else { completion("Reconnect this SmartGuide sensor first."); return }
+    transmitter.calibrate(input, completion: completion)
+  }
+
+  func checkSmartGuideCalibration(serial: String) {
+    guard let transmitter = managerProvider()?.getCGMTransmitter() as? CGMSmartGuideTransmitter,
+          transmitter.serial == serial else { message = "Reconnect this SmartGuide sensor first."; return }
+    transmitter.checkCalibration { [weak self] in self?.message = $0 }
+  }
 
   func refresh() {
     devices = managerProvider()?.getBluetoothPeripherals() ?? []
@@ -124,6 +231,10 @@ final class JournalManagement: ObservableObject {
       return
     }
     let transmitter = manager.getBluetoothTransmitter(for: device, createANewOneIfNecesssary: true)
+    if let smartGuide = transmitter as? CGMSmartGuideTransmitter {
+      smartGuide.retry()
+      return
+    }
     guard transmitter?.getConnectionStatus() != .connected else {
       message = "Bluetooth is already connected. Waiting for the next reading."
       return

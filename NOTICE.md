@@ -4,11 +4,13 @@
 
 GluLibre is based on [JohanDegraeve/xdripswift](https://github.com/JohanDegraeve/xdripswift), upstream version 6.3.3, commit `69eb8833`. Copyright belongs to Johan Degraeve and the other authors credited in the source and Git history. Those notices have not been replaced by this fork's branding.
 
-Fork changes dated **2026-08-24 through 2026-09-20** cover Libre diagnostics, meal capture and analysis, personal food-response observations, Apple Health context, iPhone/Watch UI, testing and repository documentation. [Fork history](FORK_NOTES.md) describes the changes; individual commits and retained headers establish their provenance.
+Fork changes dated **2026-08-24 through 2026-11-08** cover Libre diagnostics, meal capture and analysis, personal food-response observations, Apple Health context, iPhone/Watch UI, encrypted journal backup/restore, retention safeguards, testing and repository documentation. [Fork history](FORK_NOTES.md) describes the changes; individual commits and retained headers establish their provenance.
 
 The app is free software under the **GNU General Public License, version 3 or any later version**, as stated by upstream's in-app notice (`xDrip/Texts/TextsHomeView.swift`). A complete copy of version 3 is in [LICENSE](LICENSE). You may redistribute and modify the app under those terms. It is provided **without warranty**, including the implied warranties of merchantability or fitness for a particular purpose. No health or longevity outcome is promised.
 
 ## Included dependencies and assets
+
+15 October 2026: added experimental SmartGuide Bluetooth collection and explicit meter calibration, based on CGMS specifications and the xDrip/Juggluco/Nordic implementations described in [SmartGuide notes](docs/SMARTGUIDE.md). Nordic parser/test-vector attribution and BSD-3-Clause terms are retained in [its notice](docs/licenses/Nordic-BLE.txt) and the bundled third-party notices. No Roche endorsement is claimed.
 
 Full notices are bundled for offline reading in [ThirdPartyNotices.txt](xDrip/Resources/Legal/ThirdPartyNotices.txt), alongside [the GPL text](xDrip/Resources/Legal/GPL-3.0.txt), and exposed in Settings → About & licenses. Dependency revisions are pinned in the workspace's [Package.resolved](xdrip.xcworkspace/xcshareddata/swiftpm/Package.resolved).
 

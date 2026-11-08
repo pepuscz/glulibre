@@ -3,6 +3,7 @@ import Charts
 import ImageIO
 
 struct FoodLibrarySection: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var model: JournalModel
     @ObservedObject var health: JournalHealthContext
     let edit: (UUID) -> Void
@@ -17,9 +18,17 @@ struct FoodLibrarySection: View {
             if groups.isEmpty {
                 VStack(spacing: 16) {
                     Image(systemName: "fork.knife.circle").font(.system(size: 48)).foregroundStyle(JournalStyle.accent)
-                    Text("Your food. Your response.").font(.title2.bold())
-                    Text("Take a meal photo. Your personal food library grows here.").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    Button("Log a meal", systemImage: "camera.fill", action: capture).buttonStyle(.borderedProminent)
+                    Text("No comparisons yet").font(.title2.bold()).multilineTextAlignment(.center)
+                    Button(action: capture) {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            Text("Log a meal")
+                                .fixedSize(horizontal: false, vertical: true)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Label("Log a meal", systemImage: "camera.fill")
+                        }
+                    }.buttonStyle(.borderedProminent)
                 }.frame(maxWidth: .infinity).padding(.vertical, 32)
             }
             ForEach(groups) { group in
@@ -30,16 +39,19 @@ struct FoodLibrarySection: View {
                 }.listRowSeparator(.hidden)
             }
         } header: {
-            HStack {
-                Text("Your foods")
-                Spacer()
-                Menu {
-                    Button("Recently eaten") { largerFirst = false }
-                    Button("Larger typical rises") { largerFirst = true }
-                } label: { Label(largerFirst ? "Rise" : "Recent", systemImage: "arrow.up.arrow.down") }
+            if !groups.isEmpty {
+                let layout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                    : AnyLayout(HStackLayout())
+                layout {
+                    Text("Last 90 days")
+                    if !dynamicTypeSize.isAccessibilitySize { Spacer() }
+                    Menu {
+                        Button("Recently eaten") { largerFirst = false }
+                        Button("Larger typical rises") { largerFirst = true }
+                    } label: { Label(largerFirst ? "Rise" : "Recent", systemImage: "arrow.up.arrow.down") }
+                }
             }
-        } footer: {
-            Text("Last 90 days · Whole meals, not ingredient verdicts.")
         }
     }
 }
@@ -103,7 +115,7 @@ struct FoodResponseDetail: View {
                             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
                             : AnyLayout(HStackLayout())
                         headerLayout {
-                            Text("Your response").font(.headline).fixedSize(horizontal: false, vertical: true)
+                            Text("Response").font(.headline).fixedSize(horizontal: false, vertical: true)
                             if !dynamicTypeSize.isAccessibilitySize { Spacer() }
                             Text(group.repeated ? "Repeated observations" : FoodResponseStatus.title(for: group))
                                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -118,7 +130,7 @@ struct FoodResponseDetail: View {
                     }
                     if !group.components.isEmpty {
                         JournalCard {
-                            DisclosureGroup("What’s in this meal") {
+                            DisclosureGroup("Foods & portions") {
                                 ForEach(Array(group.components.enumerated()), id: \.offset) { _, item in
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(item.name).font(.subheadline.bold())
@@ -132,7 +144,7 @@ struct FoodResponseDetail: View {
                             }
                         }
                     }
-                    Text("The meals behind it").font(.headline)
+                    Text("Meals").font(.headline)
                     ForEach(group.responses) { response in
                         if let meal = model.meals.first(where: { $0.id == response.id }) {
                             JournalCard {
@@ -150,7 +162,7 @@ struct FoodResponseDetail: View {
                                         Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.secondary)
                                     }
                                 }
-                                FoodMealContext(health: health, date: meal.eatenAt)
+                                FoodMealContext(health: health, date: response.date)
                                 Menu {
                                     Button("Edit foods & time", systemImage: "pencil") { editingMeal = meal }
                                     Button(meal.keepResponseSeparate == true ? "Allow matching meals" : "Keep this meal separate", systemImage: "rectangle.on.rectangle.slash") {
@@ -164,7 +176,7 @@ struct FoodResponseDetail: View {
                         }
                     }
                     JournalCard {
-                        DisclosureGroup("How this comparison works") {
+                        DisclosureGroup("Comparison details") {
                             Text("Each line is one eating occasion. Dashed lines show observations excluded from typical-rise comparisons, such as overlapping meals. Typical rise needs at least three usable days. Photos within 30 minutes of the first share a window; all foods are matched together, not credited individually.")
                                 .font(.footnote).foregroundStyle(.secondary)
                             if let area = group.medianArea {
@@ -178,10 +190,10 @@ struct FoodResponseDetail: View {
                 VStack(spacing: 12) {
                     Image(systemName: "square.stack").font(.largeTitle)
                     Text("Meal grouping updated").font(.headline)
-                    Text("Return to Your foods to see the updated library.").foregroundStyle(.secondary)
+                    Text("Return to Foods to see the updated groups.").foregroundStyle(.secondary)
                 }.padding(24)
             }
-        }.background(JournalStyle.background).navigationTitle("Your food").navigationBarTitleDisplayMode(.inline)
+        }.background(JournalStyle.background).navigationTitle("Food").navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $choosingComparison) {
                 NavigationStack {
                     List(model.foodGroups.filter { $0.id != groupID }) { other in
@@ -238,11 +250,12 @@ private struct FoodMealContext: View {
                 Label("\(Int(sleep / 3600))h \(Int(sleep.truncatingRemainder(dividingBy: 3600) / 60))m sleep · prior 24h", systemImage: "moon.zzz")
             }
             if health.enabled {
+                JournalMovementContextLabel(health: health, date: date)
                 ForEach(workouts) { workout in
                     Label("\(workout.title) · \(workout.interval.start.formatted(date: .omitted, time: .shortened)) · \(Int(workout.activeDuration / 60)) min", systemImage: "figure.walk")
                 }
             }
-            if !health.enabled || (workouts.isEmpty && health.sleepBefore(date) == nil) {
+            if !health.enabled {
                 Label("Sleep & activity unavailable", systemImage: "heart.slash")
             }
         }.font(.caption).foregroundStyle(.secondary)
@@ -292,7 +305,7 @@ struct FoodComparisonView: View {
                                                     Text("\(food.name) · \(food.portion)").font(.subheadline)
                                                 }
                                             }
-                                            FoodMealContext(health: health, date: meal.eatenAt)
+                                            FoodMealContext(health: health, date: response.date)
                                         }.frame(maxWidth: .infinity, alignment: .leading)
                                     }
                                 }

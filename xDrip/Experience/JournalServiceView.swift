@@ -294,22 +294,29 @@ struct JournalStorageView: View {
   @State private var days = ""
   @State private var reduction: Int?
   @State private var error: String?
+  @State private var automaticCleanup = JournalStoragePolicy.removesOldHistory()
+  @State private var confirmCleanup = false
   init(model: SettingsViewModelProtocol) {
     _adapter = StateObject(wrappedValue: JournalServiceAdapter(model))
   }
   var body: some View {
     Form {
       Section {
+        Toggle("Remove older history", isOn: Binding(get: { automaticCleanup }, set: { enabled in
+          if enabled { confirmCleanup = true }
+          else { automaticCleanup = false; UserDefaults.standard.set(false, forKey: JournalStoragePolicy.cleanupKey) }
+        }))
         Button {
           days = String(UserDefaults.standard.retentionPeriodInDays)
           editing = true
         } label: {
           LabeledContent(
-            "Keep glucose history", value: "\(UserDefaults.standard.retentionPeriodInDays) days")
+            "Keep glucose history", value: automaticCleanup ? "\(UserDefaults.standard.retentionPeriodInDays) days" : "Forever")
         }
+        .disabled(!automaticCleanup)
       } footer: {
         Text(
-          "Also applies to older calibration and treatment records. Meal photos and notes are kept separately and aren’t removed by this setting."
+          "History stays until you choose to remove it. Automatic removal also applies to older calibration and treatment records, but not meal photos or restored history."
         )
       }
       Section {
@@ -321,6 +328,15 @@ struct JournalStorageView: View {
         )
       }
     }.navigationTitle("Storage & export").navigationBarTitleDisplayMode(.inline)
+      .alert("Remove older history automatically?", isPresented: $confirmCleanup) {
+        Button("Cancel", role: .cancel) {}
+        Button("Enable removal", role: .destructive) {
+          automaticCleanup = true
+          UserDefaults.standard.set(true, forKey: JournalStoragePolicy.cleanupKey)
+        }
+      } message: {
+        Text("Records older than \(UserDefaults.standard.retentionPeriodInDays) days will become eligible for deletion. Export a backup first.")
+      }
       .sheet(isPresented: $editing) {
         NavigationStack {
           Form {

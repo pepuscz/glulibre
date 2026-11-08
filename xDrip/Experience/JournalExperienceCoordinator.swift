@@ -86,6 +86,15 @@ final class JournalExperienceCoordinator {
 
     #if targetEnvironment(simulator) && DEBUG
       let arguments = ProcessInfo.processInfo.arguments
+      if JournalModel.isSimulatorUITest && arguments.contains("--smartguide-calibration-preview") {
+        let state = SmartGuideConnectionState.shared
+        state.serial = "12345678"
+        state.model = "Synthetic SmartGuide"
+        state.firmware = "Fixture"
+        state.calibrationAvailable = true
+        state.canCheckCalibration = true
+        state.message = "Calibration needed"
+      }
       if JournalModel.isSimulatorUITest && arguments.contains("--journal-watch-default") {
         UserDefaults.standard.removeObject(forKey: UserDefaults.Key.showDataInWatchComplications.rawValue)
       }
@@ -93,6 +102,8 @@ final class JournalExperienceCoordinator {
         UserDefaults.standard.allowScreenRotation = true
       }
       if arguments.contains("--journal-storage-checks") {
+        BLEPeripheral.runSmartGuidePersistenceChecks()
+        JournalBackupController.runSimulatorChecks()
         MealStore.runPersistenceChecks()
         MealHealthKitWriter.runAuthorizationTypeChecks()
         JournalPreferences.runNotificationChecks()
@@ -107,6 +118,10 @@ final class JournalExperienceCoordinator {
       guard !didRunSimulatorRoute, JournalModel.shared.isReady else { return }
       didRunSimulatorRoute = true
       let args = ProcessInfo.processInfo.arguments
+      if JournalModel.isSimulatorUITest && args.contains("--notification-preview") {
+        presenter?.present(UIHostingController(rootView: NotificationView(
+          presentation: .preview(mode: args.last ?? "fresh"))), animated: false)
+      }
       if args.contains("--journal-health-demo") {
         JournalHealthContext.shared.useSimulatorPreview()
       }
@@ -229,6 +244,10 @@ final class JournalExperienceCoordinator {
 
   func showSensorSetup() {
     presentSheet(JournalSensorSetupView(model: .shared, management: management))
+  }
+
+  func showLibreSetup() {
+    presentSheet(JournalLibreSetupView(model: .shared, management: management))
   }
 
   private func presentSheet<Content: View>(_ content: Content) {

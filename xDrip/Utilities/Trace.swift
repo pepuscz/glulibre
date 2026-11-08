@@ -609,6 +609,8 @@ class Trace {
                             
                         }
                         
+                    case .smartGuide:
+                        if blePeripheral.isSmartGuide { traceInfo.appendStringAndNewLine("        Type: Accu-Chek SmartGuide") }
                     case .Libre2Type:
                         if blePeripheral.libre2 != nil {
                             

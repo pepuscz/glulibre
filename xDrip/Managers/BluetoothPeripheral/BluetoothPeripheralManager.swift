@@ -163,7 +163,7 @@ class BluetoothPeripheralManager: NSObject {
                         _ = m5StackBluetoothTransmitter.writeBgReadingInfo(bgReading: bgReadingToSend[0])
                     }
                     
-                case .DexcomType, .BubbleType, .MiaoMiaoType, .Libre2Type, .DexcomG7Type:
+                case .DexcomType, .BubbleType, .MiaoMiaoType, .Libre2Type, .DexcomG7Type, .smartGuide:
                     // cgm's don't receive reading, they send it
                     break
                     
@@ -188,7 +188,10 @@ class BluetoothPeripheralManager: NSObject {
         coreDataManager.saveChanges()
         
         if let bluetoothTransmitter = getBluetoothTransmitter(for: bluetoothPeripheral, createANewOneIfNecesssary: false) {
-            
+            if let smartGuide = bluetoothTransmitter as? CGMSmartGuideTransmitter {
+                smartGuide.pauseCollection()
+                return
+            }
             bluetoothTransmitter.disconnect()
             
         }
@@ -212,6 +215,12 @@ class BluetoothPeripheralManager: NSObject {
                 var newTransmitter: BluetoothTransmitter? = nil
                 
                 switch bluetoothPeripheral.bluetoothPeripheralType() {
+                case .smartGuide:
+                    if let receiver = cgmTransmitterDelegate {
+                        let saved = bluetoothPeripheral.blePeripheral
+                        newTransmitter = CGMSmartGuideTransmitter(address: saved.address, name: saved.name,
+                            serial: saved.smartGuideSerial, bluetoothDelegate: self, receiver: receiver)
+                    }
                     
                 case .M5StackType, .M5StickCType:
                     
@@ -360,6 +369,8 @@ class BluetoothPeripheralManager: NSObject {
             
             // using switch through all cases, to make sure that new future types are supported
             switch bluetoothPeripheralType {
+            case .smartGuide:
+                if bluetoothTransmitter is CGMSmartGuideTransmitter { return .smartGuide }
                 
             case .M5StackType, .M5StickCType:
                 
@@ -423,6 +434,10 @@ class BluetoothPeripheralManager: NSObject {
     public func createNewTransmitter(type: BluetoothPeripheralType, transmitterId: String?, bluetoothTransmitterDelegate: BluetoothTransmitterDelegate?) -> BluetoothTransmitter {
         
         switch type {
+        case .smartGuide:
+            guard let receiver = cgmTransmitterDelegate else { fatalError("CGM receiver unavailable") }
+            return CGMSmartGuideTransmitter(address: nil, name: nil, serial: transmitterId ?? "",
+                bluetoothDelegate: bluetoothTransmitterDelegate ?? self, receiver: receiver)
             
         case .M5StackType, .M5StickCType:
             
@@ -663,6 +678,16 @@ class BluetoothPeripheralManager: NSObject {
             bluetoothPeripheralTypeLoop: for bluetoothPeripheralType in BluetoothPeripheralType.allCases {
 
                 switch bluetoothPeripheralType {
+                case .smartGuide:
+                    if blePeripheral.isSmartGuide {
+                        blePeripheralFound = true
+                        let index = insertInBluetoothPeripherals(bluetoothPeripheral: blePeripheral)
+                        let transmitter = blePeripheral.shouldconnect
+                            ? CGMSmartGuideTransmitter(address: blePeripheral.address, name: blePeripheral.name,
+                                serial: blePeripheral.smartGuideSerial, bluetoothDelegate: self, receiver: cgmTransmitterDelegate) : nil
+                        bluetoothTransmitters.insert(transmitter, at: index)
+                        if blePeripheral.shouldconnect { currentCgmTransmitterAddress = blePeripheral.address }
+                    }
                     
                 case .M5StackType:
                     // no seperate handling needed for M5StickC because M5StickC is stored in coredata as M5Stack objecct, so it will be handled when going through case M5StackType
@@ -1067,7 +1092,7 @@ class BluetoothPeripheralManager: NSObject {
                     bluetoothPeripheral.blePeripheral.parameterUpdateNeededAtNextConnect = true
                 }
              
-            case .DexcomType, .BubbleType, .MiaoMiaoType, .Libre2Type, .Libre3HeartBeatType, .DexcomG7HeartBeatType, .OmniPodHeartBeatType, .DexcomG7Type:
+            case .DexcomType, .BubbleType, .MiaoMiaoType, .Libre2Type, .Libre3HeartBeatType, .DexcomG7HeartBeatType, .OmniPodHeartBeatType, .DexcomG7Type, .smartGuide:
 
                 // nothing to check
                 break
@@ -1213,7 +1238,10 @@ extension BluetoothPeripheralManager: BluetoothPeripheralManaging {
         // - either the bluetoothTransmitter doesn't exist yet. It will be created. We assum here that bluetoothPeripheral has a mac address, as a consequence the BluetoothTransmitter will automatically try to connect. Here we try to connect again, but that's ok that as well tue BluetoothTransmitter will try to connect and we do it again here
         
         let transmitter = getBluetoothTransmitter(for: bluetoothPeripheral, createANewOneIfNecesssary: true)
-        
+        if let smartGuide = transmitter as? CGMSmartGuideTransmitter {
+            smartGuide.retry()
+            return
+        }
         transmitter?.connect()
         
     }

@@ -24,6 +24,21 @@ struct RootView: View {
 
   var body: some View {
     Group {
+      #if DEBUG && targetEnvironment(simulator)
+      if ProcessInfo.processInfo.arguments.contains("--notification-preview") {
+        let mode = ProcessInfo.processInfo.arguments.last ?? "fresh"
+        ScrollView { NotificationView(presentation: .preview(mode: mode)) }
+      } else {
+        content
+      }
+      #else
+      content
+      #endif
+    }
+  }
+
+  private var content: some View {
+    Group {
       if dimmed || previewDimmed {
         VStack(spacing: 8) {
           Image(systemName: "drop.fill").font(.title2).foregroundStyle(.mint)

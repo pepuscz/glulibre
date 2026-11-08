@@ -6,6 +6,8 @@ public class GlucoseData {
     var timeStamp:Date
 
     var glucoseLevelRaw:Double
+    /// Persisted with source provenance; this does not represent a treatment-ready value.
+    var isTrendOnly = false
 
     /// used when needed
     var slopeOrdinal: Int?

@@ -42,9 +42,9 @@ extension BluetoothPeripheralManager: BluetoothTransmitterDelegate {
         let notificationContent = UNMutableNotificationContent()
         
         // Configure NnotificationContent title
-        notificationContent.title = Texts_Common.warning
+        notificationContent.title = "Bluetooth pairing needed"
         
-        notificationContent.body = Texts_HomeView.transmitterNotPaired
+        notificationContent.body = "Open GluLibre near your sensor to finish pairing."
         
         // add sound
         notificationContent.sound = UNNotificationSound.init(named: UNNotificationSoundName.init(""))
@@ -256,6 +256,12 @@ extension BluetoothPeripheralManager: BluetoothTransmitterDelegate {
         newBluetoothPeripheral.blePeripheral.lastConnectionStatusChangeTimeStamp = Date()
         
         // call sendSettings function
+        if let smartGuide = bluetoothTransmitter as? CGMSmartGuideTransmitter {
+            // Legacy setup callbacks may assign a plain transmitter ID. Keep the
+            // persistent type discriminator independent of that presentation path.
+            newBluetoothPeripheral.blePeripheral.transmitterId = BLEPeripheral.smartGuideMarker + smartGuide.serial
+            newBluetoothPeripheral.blePeripheral.sensorSerialNumber = smartGuide.serial
+        }
         newBluetoothPeripheral.sendSettings(to: bluetoothTransmitter)
         
     }

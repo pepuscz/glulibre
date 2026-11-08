@@ -266,6 +266,52 @@ final class MealStore {
         try? Data(contentsOf: directoryURL.appendingPathComponent(record.imageFilename))
     }
 
+    /// Freeze index and originals on the same queue used by edits/deletions.
+    func backupSnapshot() throws -> (Data, [String: BackupPhoto]) {
+        try queue.sync {
+            try ensureAvailable()
+            var photos: [String: BackupPhoto] = [:]
+            for record in records {
+                guard JournalBackupArchive.safeFilename(record.imageFilename) else { throw JournalBackupError.invalidArchive }
+                let data = try Data(contentsOf: directoryURL.appendingPathComponent(record.imageFilename))
+                photos[record.imageFilename] = BackupPhoto(data: data)
+            }
+            return (try JSONEncoder().encode(records), photos)
+        }
+    }
+
+    /// Non-destructive merge. Existing IDs and filenames always win; originals are never replaced.
+    /// Imported analysis jobs are deliberately cleared so old photos cannot be re-uploaded.
+    func restoreMissing(_ incoming: [MealRecord], photos: [String: BackupPhoto]) throws -> Int {
+        let added: Int = try queue.sync {
+            try ensureAvailable()
+            let ids = Set(records.map(\.id))
+            let missing = incoming.filter { !ids.contains($0.id) }
+            var updated = records
+            for var record in missing {
+                guard JournalBackupArchive.safeFilename(record.imageFilename),
+                      let photo = photos[record.imageFilename] else { throw JournalBackupError.invalidArchive }
+                // A new filename avoids clobbering even orphan files from interrupted imports.
+                let filename = "restored-\(UUID().uuidString.lowercased()).jpg"
+                try photo.data.write(to: directoryURL.appendingPathComponent(filename),
+                                     options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                record.imageFilename = filename
+                record.analysisRequestID = nil
+                record.analysisAttempts = nil
+                record.analysisRetryAfter = nil
+                if record.status == .analyzing { record.status = record.analysis == nil ? .draft : .estimated }
+                updated.append(record)
+            }
+            if !missing.isEmpty {
+                try persistLocked(updated)
+                records = updated
+            }
+            return missing.count
+        }
+        if added > 0 { notifyChanged() }
+        return added
+    }
+
     private func ensureAvailable() throws {
         if let loadError { throw MealStoreError.unavailable(loadError) }
     }

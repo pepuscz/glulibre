@@ -4,6 +4,25 @@ import SwiftUI
 struct JournalSensorSetupView: View {
   @ObservedObject var model: JournalModel
   @ObservedObject var management: JournalManagement
+  var body: some View {
+    List {
+      NavigationLink {
+        JournalLibreSetupView(model: model, management: management)
+      } label: {
+        Label("FreeStyle Libre 2 / 2 Plus EU", systemImage: "sensor.tag.radiowaves.forward")
+      }.accessibilityIdentifier("sensor.libre")
+      NavigationLink {
+        SmartGuideSetupView(management: management)
+      } label: {
+        Label("Accu-Chek SmartGuide", systemImage: "sensor.tag.radiowaves.forward")
+      }.accessibilityIdentifier("sensor.smartguide")
+    }.navigationTitle("Choose sensor").navigationBarTitleDisplayMode(.inline)
+  }
+}
+
+struct JournalLibreSetupView: View {
+  @ObservedObject var model: JournalModel
+  @ObservedObject var management: JournalManagement
   @State private var activating = false
   @State private var finishing = false
   var body: some View {
@@ -16,7 +35,7 @@ struct JournalSensorSetupView: View {
             .title2.bold())
           if management.isWarmingUp, let end = management.warmupEnd {
             Text(end, style: .timer).font(.largeTitle.monospacedDigit())
-            Text("We’ll notify you when it’s ready. No more scans during warm-up.").foregroundStyle(
+            Text("We’ll notify you when warm-up ends. No more scans during warm-up.").foregroundStyle(
               .secondary)
           } else {
             Text("Libre 2 / 2 Plus EU").foregroundStyle(.secondary)
@@ -73,6 +92,152 @@ struct JournalSensorSetupView: View {
         )
       }
       .journalManagementMessage(management)
+  }
+}
+
+struct SmartGuideSetupView: View {
+  @ObservedObject var management: JournalManagement
+  @ObservedObject private var state = SmartGuideConnectionState.shared
+  @State private var serial = ""
+  @State private var confirmingStart = false
+  @State private var calibrating = false
+  @FocusState private var editing: Bool
+  var body: some View {
+    Form {
+      Section {
+        Label("Experimental support", systemImage: "testtube.2")
+        Text("For Accu-Chek SmartGuide. Compatibility is checked over Bluetooth; hardware validation is still pending.")
+          .font(.subheadline).foregroundStyle(.secondary)
+      }
+      Section {
+        TextField("Serial number on the blue cap", text: $serial)
+          .textInputAutocapitalization(.characters).autocorrectionDisabled()
+          .submitLabel(.done).onSubmit { editing = false }
+          .focused($editing).accessibilityIdentifier("smartguide.serial")
+      } header: {
+        Text("Sensor serial number")
+      } footer: {
+        Text("Enter the cap’s PIN in the iPhone pairing prompt. Pause mySugr’s Bluetooth access before connecting here. No NFC scan.")
+      }
+      Section {
+        Button("Connect") {
+          editing = false
+          management.connectSmartGuide(serial: serial)
+        }
+        .disabled(!SmartGuideProtocol.validSerial(serial.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()))
+        .accessibilityIdentifier("smartguide.connect")
+        if state.canInitialize && serial.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == state.serial {
+          Button("Start new sensor") { confirmingStart = true }
+            .accessibilityIdentifier("smartguide.start")
+        }
+        if !state.message.isEmpty {
+          Text(state.message).accessibilityIdentifier("smartguide.status")
+          if management.isSearchingForSmartGuide {
+            Button("Stop search") { management.cancelSmartGuideSearch() }
+          }
+        }
+      }
+      Section {
+        if serial.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == state.serial,
+           state.canCheckCalibration {
+          Button("Calibrate with meter") { calibrating = true }
+            .disabled(!state.calibrationAvailable)
+            .accessibilityIdentifier("smartguide.calibrate")
+          Button("Check calibration status") { management.checkSmartGuideCalibration(serial: state.serial) }
+          if !state.calibrationResult.isEmpty { Text(state.calibrationResult).font(.subheadline).foregroundStyle(.secondary) }
+        }
+      }
+      Section {
+        NavigationLink("Saved devices") { JournalDeviceDetailsView(management: management) }
+        if !state.model.isEmpty {
+          DisclosureGroup("Sensor details") {
+            LabeledContent("Model", value: state.model)
+            LabeledContent("Firmware", value: state.firmware.isEmpty ? "Not reported" : state.firmware)
+          }
+        }
+      } footer: {
+        Text("New-sensor initialization is experimental. Supported sensors offer Start after connecting. Keep mySugr available as a fallback. Not for treatment decisions.")
+      }
+    }
+    .navigationTitle("SmartGuide").navigationBarTitleDisplayMode(.inline)
+    .onAppear {
+      management.refresh()
+      serial = management.devices.first(where: { $0.blePeripheral.isSmartGuide })?.blePeripheral.smartGuideSerial ?? ""
+    }
+    .journalManagementMessage(management)
+    .alert("Start this new sensor?", isPresented: $confirmingStart) {
+      Button("Cancel", role: .cancel) {}
+      Button("Start sensor") { management.initializeSmartGuide(serial: serial) }
+    } message: {
+      Text("Only continue for a newly applied, unused sensor. This sends one initialization request and checks the result. Do not use it to repair an existing session.")
+    }
+    .sheet(isPresented: $calibrating) {
+      SmartGuideCalibrationView(management: management, serial: state.serial)
+    }
+  }
+}
+
+struct SmartGuideCalibrationView: View {
+  @ObservedObject var management: JournalManagement
+  let serial: String
+  @Environment(\.dismiss) private var dismiss
+  @State private var value = ""
+  @State private var usesMgDl = UserDefaults.standard.bloodGlucoseUnitIsMgDl
+  @State private var measuredAt = Date()
+  @State private var confirmation = false
+  @State private var sending = false
+  @State private var confirmedInput: SmartGuideCalibration.Input?
+  @State private var result: String?
+  @FocusState private var editing: Bool
+
+  private var input: SmartGuideCalibration.Input? {
+    guard let number = Double(value.replacingOccurrences(of: ",", with: ".")) else { return nil }
+    return try? .init(value: number, usesMgDl: usesMgDl, measuredAt: measuredAt)
+  }
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section {
+          TextField("Meter reading", text: $value).keyboardType(.decimalPad).focused($editing)
+            .accessibilityIdentifier("smartguide.calibration.value")
+          Picker("Meter units", selection: $usesMgDl) {
+            Text("mmol/L").tag(false)
+            Text("mg/dL").tag(true)
+          }.onChange(of: usesMgDl) { _ in value = "" }
+            .accessibilityIdentifier("smartguide.calibration.units")
+          DatePicker("Measured", selection: $measuredAt, in: ...Date(), displayedComponents: [.hourAndMinute])
+        } footer: {
+          Text("Use a finger-stick meter reading less than five minutes old, with stable glucose—not just after food, exercise or insulin. Never enter the sensor’s own value.")
+        }.disabled(sending)
+        Section {
+          Button(sending ? "Waiting for sensor…" : "Review calibration") {
+            editing = false
+            confirmedInput = input
+            confirmation = confirmedInput != nil
+          }
+          .disabled(sending || input == nil || !(0..<300).contains(Date().timeIntervalSince(measuredAt)))
+          .accessibilityIdentifier("smartguide.calibration.review")
+          if let result { Text(result).accessibilityIdentifier("smartguide.calibration.result") }
+        }
+      }
+      .navigationTitle("Calibrate").navigationBarTitleDisplayMode(.inline)
+      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.disabled(sending) } }
+      .alert("Send \(value) \(usesMgDl ? "mg/dL" : "mmol/L")?", isPresented: $confirmation) {
+        Button("Cancel", role: .cancel) { confirmedInput = nil }
+        Button("Send calibration") {
+          guard let confirmedInput else { return }
+          sending = true
+          management.calibrateSmartGuide(serial: serial, input: confirmedInput) { message in
+            result = message
+            value = ""
+            sending = false
+          }
+        }
+      } message: {
+        Text("Confirm the value and units against your meter. A wrong calibration cannot be undone and may require a new sensor.")
+      }
+      .interactiveDismissDisabled(sending)
+    }
   }
 }
 
@@ -154,7 +319,7 @@ struct JournalAlarmList: View {
         JournalAlarmSchedule(management: management, kind: kind)
       } label: {
         HStack {
-          Text(kind.alertTitle())
+          Text(kind.notificationTitle)
           Spacer()
           Text(
             entries.allSatisfy { $0.isDisabled || !$0.alertType.enabled }
@@ -205,7 +370,7 @@ struct JournalAlarmSchedule: View {
       } footer: {
         Text("Each period runs until the next one. Times follow this iPhone’s time zone.")
       }
-    }.navigationTitle(kind.alertTitle()).navigationBarTitleDisplayMode(.inline).onAppear {
+    }.navigationTitle(kind.notificationTitle).navigationBarTitleDisplayMode(.inline).onAppear {
       management.refresh()
     }
     .toolbar {
@@ -355,7 +520,7 @@ struct JournalAlarmEditor: View {
         }
       }
       if let error { Section { Text(error).foregroundStyle(.red) } }
-    }.navigationTitle(kind.alertTitle()).navigationBarTitleDisplayMode(.inline)
+    }.navigationTitle(kind.notificationTitle).navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
           Button("Save", action: save).accessibilityIdentifier("alarm.save")

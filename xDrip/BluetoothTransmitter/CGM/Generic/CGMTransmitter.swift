@@ -96,11 +96,14 @@ enum CGMTransmitterType:String, CaseIterable {
     
     /// Libre2
     case Libre2 = "Libre2"
+    case smartGuide = "Accu-Chek SmartGuide"
     
     /// what sensorType does this CGMTransmitter type support
     func sensorType() -> CGMSensorType {
         
         switch self {
+        case .smartGuide:
+            return .smartGuide
             
         case .dexcom, .dexcomG7:
             return .Dexcom
@@ -132,7 +135,7 @@ enum CGMTransmitterType:String, CaseIterable {
         case .Libre2:
             return true
             
-        case .dexcomG7:
+        case .dexcomG7, .smartGuide:
             return true
             
         }
@@ -151,7 +154,7 @@ enum CGMTransmitterType:String, CaseIterable {
         case .miaomiao, .Bubble, .Libre2:
             return true
             
-        case .dexcomG7:
+        case .dexcomG7, .smartGuide:
             return false
         
         }
@@ -173,7 +176,7 @@ enum CGMTransmitterType:String, CaseIterable {
         case .Libre2:
             return ConstantsDefaultAlertLevels.defaultBatteryAlertLevelLibre2
             
-        case .dexcomG7:
+        case .dexcomG7, .smartGuide:
             // we don't use this
             return ConstantsDefaultAlertLevels.defaultBatteryAlertLevelDexcomG5
             
@@ -196,7 +199,7 @@ enum CGMTransmitterType:String, CaseIterable {
         case .Libre2:
             return "%"
             
-        case .dexcomG7:
+        case .dexcomG7, .smartGuide:
             // we don't use this
             return ""
             
