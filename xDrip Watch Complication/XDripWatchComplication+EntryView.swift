@@ -35,7 +35,7 @@ extension XDripWatchComplication {
                 value: entry.widgetState.bgValueInMgDl, date: entry.widgetState.bgReadingDate, now: entry.date)
         }
         private var statusSymbol: String {
-            !entry.widgetState.liveDataIsEnabled ? "eye.slash" : fresh ? (entry.widgetState.isTrendOnly ? "exclamationmark.circle" : "drop.fill") : "clock.badge.exclamationmark"
+            !entry.widgetState.liveDataIsEnabled ? "eye.slash" : "clock.badge.exclamationmark"
         }
         
         var body: some View {
@@ -47,8 +47,9 @@ extension XDripWatchComplication {
                             Text(value).font(.title2.weight(.semibold)).monospacedDigit()
                             Text(arrow).font(.title3)
                             Spacer(minLength: 0)
-                            Image(systemName: statusSymbol)
-                                .widgetAccentable()
+                            if !fresh {
+                                Image(systemName: statusSymbol).widgetAccentable()
+                            }
                         }
                         Text(status).font(.caption)
                         if let date = entry.widgetState.bgReadingDate, entry.widgetState.liveDataIsEnabled {
@@ -58,7 +59,9 @@ extension XDripWatchComplication {
                     }
                 case .accessoryCircular:
                     VStack(spacing: 0) {
-                        Image(systemName: statusSymbol).font(.caption2).widgetAccentable()
+                        if !fresh {
+                            Image(systemName: statusSymbol).font(.caption2).widgetAccentable()
+                        }
                         Text(value).font(.system(.title3, design: .rounded).weight(.semibold)).minimumScaleFactor(0.7)
                         Text(fresh ? arrow : unavailableLabel).font(.caption2)
                     }
@@ -67,7 +70,7 @@ extension XDripWatchComplication {
                         .widgetCurvesContent()
                         .widgetLabel { Text(fresh ? "\(entry.widgetState.bgUnitString) \(arrow)\(entry.widgetState.isTrendOnly ? " · Not calibrated" : "")" : status) }
                 case .accessoryInline:
-                    Text(fresh ? "\(value) \(arrow) \(entry.widgetState.bgUnitString)\(entry.widgetState.isTrendOnly ? " ⚠︎" : "")" : "Glucose · \(status)")
+                    Text(fresh ? "\(value) \(arrow) \(entry.widgetState.bgUnitString)" : "Glucose · \(status)")
                 default:
                     Image(systemName: "drop.fill")
                 }

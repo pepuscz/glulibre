@@ -234,13 +234,6 @@ struct JournalTodayView: View {
                 JournalGlucoseChart(model: model, points: visiblePoints,
                     interval: DateInterval(start: model.now.addingTimeInterval(-Double(hours) * 3600), end: model.now),
                     meals: model.meals, showLimits: showLimits, chartHeight: 250)
-                Button { showReadingInfo = true } label: {
-                    HStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: 3).fill(JournalStyle.accent.opacity(0.25)).frame(width: 16, height: 10)
-                        Text("Reference \(model.formatted(GlucoseReference.lower))–\(model.formatted(GlucoseReference.upper)) \(model.unit)")
-                        Image(systemName: "info.circle")
-                    }.font(.caption).foregroundStyle(.secondary)
-                }.buttonStyle(.plain)
                 JournalChartLegend()
             }
             if showLimits {
@@ -255,10 +248,21 @@ extension MealRecord: Identifiable {}
 
 struct JournalChartLegend: View {
     var body: some View {
-        HStack(spacing: 18) {
-            Label("Meals", systemImage: "fork.knife").foregroundStyle(.orange)
-            Label("Movement", systemImage: "figure.walk").foregroundStyle(.purple)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 18) { items }.fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: 8) { items }
         }.font(.caption)
+    }
+
+    @ViewBuilder private var items: some View {
+        Label {
+            Text("Reference")
+        } icon: {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(JournalStyle.accent.opacity(0.25)).frame(width: 16, height: 10)
+        }.foregroundStyle(.secondary)
+        Label("Meals", systemImage: "fork.knife").foregroundStyle(.orange)
+        Label("Movement", systemImage: "figure.walk").foregroundStyle(.purple)
     }
 }
 
