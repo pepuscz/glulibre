@@ -1,5 +1,7 @@
 # Watch companion — build 4238
 
+Historical design notes. See the [current Watch review](WATCH_REVIEW_4270.md) and [single-scroll navigation](WATCH_SCROLLING_4247.md); the Connection page described below was removed.
+
 ## Product
 
 The wrist answers three questions: **what is my latest glucose, what happened after my last meal, and why isn't it updating?** It does not reproduce the phone's settings, photo library, food rankings, sensor setup, or diagnostics.

@@ -18,7 +18,7 @@ struct XDripWatchComplication: Widget {
             XDripWatchComplication.EntryView(entry: entry)
         }
         .configurationDisplayName(ConstantsHomeView.applicationName)
-        .description("Show the current blood glucose level")
+        .description("Glucose and trend at a glance.")
         .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline, .accessoryCorner])
     }
 }

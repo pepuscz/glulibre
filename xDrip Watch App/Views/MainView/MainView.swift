@@ -57,7 +57,10 @@ struct MainView: View {
         .frame(height: compact ? 72 : 104).privacySensitive()
         .accessibilityIdentifier("watch.chart")
         HStack {
-          Text("3 hours")
+          if fresh && state.isTrendOnly {
+            Text("Not calibrated").lineLimit(1).minimumScaleFactor(0.85)
+              .foregroundStyle(.orange).accessibilityIdentifier("watch.uncalibrated")
+          } else { Text("3 hours") }
           Spacer()
           Text("Now").accessibilityIdentifier("watch.chart.end")
         }
@@ -103,10 +106,10 @@ struct WatchMealView: View {
           let elapsed = max(0, now.timeIntervalSince1970 - meal.eatenAt)
           if elapsed < 7200 {
             ProgressView(value: elapsed, total: 7200).tint(.mint)
-            Text("\(Int(ceil((7200 - elapsed) / 60))) min to observe")
+            Text("\(Int(ceil((7200 - elapsed) / 60))) min left")
               .font(.caption).foregroundStyle(.secondary)
           } else {
-            Text("Response pending")
+            Text("Waiting for readings")
               .font(.caption).foregroundStyle(.secondary)
           }
         } else {
@@ -121,9 +124,7 @@ struct WatchMealView: View {
       } else {
         Image(systemName: "camera.fill").font(.largeTitle).foregroundStyle(.mint)
           .frame(maxWidth: .infinity).padding(.vertical, 10)
-        Text("Capture food on iPhone").font(.headline)
-        Text("Your latest meal and its response appear here.").font(.caption).foregroundStyle(
-          .secondary)
+        Text("Log a meal on iPhone").font(.headline)
       }
     }.padding(.horizontal, 6).privacySensitive()
   }

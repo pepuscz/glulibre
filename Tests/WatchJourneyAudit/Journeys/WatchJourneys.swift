@@ -40,13 +40,14 @@ final class WatchJourneys: XCTestCase {
 
     func testNotificationPresentation() {
         let app = XCUIApplication(bundleIdentifier: "com.652PWHFDA9.libredebug.watchkitapp")
-        for mode in ["fresh", "stale", "missing"] {
+        for mode in ["fresh", "stale", "missing", "uncalibrated"] {
             app.launchArguments = ["--watch-demo", "--notification-preview", mode]
             app.launch()
-            XCTAssertTrue(app.staticTexts[mode == "fresh" ? "Low glucose" : "Readings paused"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts[(mode == "fresh" || mode == "uncalibrated") ? "Low glucose" : "Readings paused"].waitForExistence(timeout: 10))
             XCTAssertFalse(app.staticTexts["LOW ALARM"].exists)
             if mode == "stale" { XCTAssertTrue(app.staticTexts["Reading out of date"].exists) }
-            if mode != "fresh" {
+            if mode == "uncalibrated" { XCTAssertTrue(app.staticTexts["Not calibrated"].exists) }
+            if mode == "stale" || mode == "missing" {
                 XCTAssertTrue(app.staticTexts["Keep your iPhone near the sensor. Open GluLibre if readings don’t resume."].exists)
             }
             capture("Notification-" + mode, app: app)
@@ -102,7 +103,7 @@ final class WatchJourneys: XCTestCase {
 
     func testChartIsReadableWithoutScrolling() {
         let app = XCUIApplication(bundleIdentifier: "com.652PWHFDA9.libredebug.watchkitapp")
-        for (name, flags) in [("Chart-mmol", [String]()), ("Chart-mgdl", ["--watch-mgdl"])] {
+        for (name, flags) in [("Chart-mmol", [String]()), ("Chart-mgdl", ["--watch-mgdl"]), ("Chart-uncalibrated", ["--watch-uncalibrated"])] {
             app.launchArguments = ["--watch-demo"] + flags
             app.launch()
             let reading = app.staticTexts["watch.glucose"]
@@ -114,6 +115,12 @@ final class WatchJourneys: XCTestCase {
             XCTAssertLessThanOrEqual(chart.frame.maxY, app.frame.maxY - 12)
             XCTAssertTrue(chart.isHittable)
             XCTAssertTrue(app.staticTexts["watch.chart.end"].isHittable)
+            if name == "Chart-uncalibrated" {
+                let status = app.staticTexts["watch.uncalibrated"]
+                XCTAssertTrue(status.isHittable)
+                XCTAssertLessThanOrEqual(status.frame.height, 24, "Status must fit one line on small watches")
+                XCTAssertLessThanOrEqual(status.frame.maxY, app.frame.maxY)
+            }
             capture(name, app: app)
             app.terminate()
         }

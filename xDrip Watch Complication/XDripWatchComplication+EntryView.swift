@@ -27,7 +27,7 @@ extension XDripWatchComplication {
         private var status: String {
             if !entry.widgetState.liveDataIsEnabled { return "Hidden on watch face" }
             if entry.widgetState.bgReadingDate == nil { return "Waiting for data" }
-            return fresh ? entry.widgetState.bgUnitString : "Out of date"
+            return fresh ? (entry.widgetState.isTrendOnly ? "Not calibrated" : entry.widgetState.bgUnitString) : "Out of date"
         }
         private var arrow: String { fresh ? WatchGlancePolicy.trendSymbol(entry.widgetState.slopeOrdinal) : "" }
         private var unavailableLabel: String {
@@ -35,7 +35,7 @@ extension XDripWatchComplication {
                 value: entry.widgetState.bgValueInMgDl, date: entry.widgetState.bgReadingDate, now: entry.date)
         }
         private var statusSymbol: String {
-            !entry.widgetState.liveDataIsEnabled ? "eye.slash" : fresh ? "drop.fill" : "clock.badge.exclamationmark"
+            !entry.widgetState.liveDataIsEnabled ? "eye.slash" : fresh ? (entry.widgetState.isTrendOnly ? "exclamationmark.circle" : "drop.fill") : "clock.badge.exclamationmark"
         }
         
         var body: some View {
@@ -65,16 +65,16 @@ extension XDripWatchComplication {
                 case .accessoryCorner:
                     Text(value).font(.title3.weight(.semibold))
                         .widgetCurvesContent()
-                        .widgetLabel { Text(fresh ? "\(entry.widgetState.bgUnitString) \(arrow)" : status) }
+                        .widgetLabel { Text(fresh ? "\(entry.widgetState.bgUnitString) \(arrow)\(entry.widgetState.isTrendOnly ? " · Not calibrated" : "")" : status) }
                 case .accessoryInline:
-                    Text(fresh ? "\(value) \(arrow) \(entry.widgetState.bgUnitString)" : "Glucose · \(status)")
+                    Text(fresh ? "\(value) \(arrow) \(entry.widgetState.bgUnitString)\(entry.widgetState.isTrendOnly ? " ⚠︎" : "")" : "Glucose · \(status)")
                 default:
                     Image(systemName: "drop.fill")
                 }
             }
             .privacySensitive()
             .containerBackground(.clear, for: .widget)
-            .accessibilityLabel(fresh ? "Glucose \(value) \(entry.widgetState.bgUnitString). \(WatchGlancePolicy.trendDescription(entry.widgetState.slopeOrdinal))" : "Glucose. \(status)")
+            .accessibilityLabel(fresh ? "Glucose \(value) \(entry.widgetState.bgUnitString). \(WatchGlancePolicy.trendDescription(entry.widgetState.slopeOrdinal)). \(entry.widgetState.isTrendOnly ? "Not calibrated" : "")" : "Glucose. \(status)")
         }
     }
 }

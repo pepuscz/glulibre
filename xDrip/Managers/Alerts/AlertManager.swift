@@ -638,6 +638,7 @@ public class AlertManager: NSObject {
             let bgReadings = bgReadingsAccessor.getLatestBgReadings(limit: nil, fromDate: Date().addingTimeInterval(-3600 * hoursOfBgReadingsToSend), forSensor: nil, ignoreRawData: true, ignoreCalculatedValue: false)
             
             if bgReadings.count > 0 {
+                alertNotificationDictionary.isTrendOnly = bgReadings.first?.deviceName?.hasSuffix(" · Trend mode") == true
                 alertNotificationDictionary.isMgDl = isMgDl
                 alertNotificationDictionary.slopeOrdinal = 0
                 alertNotificationDictionary.deltaValueInUserUnit = 0

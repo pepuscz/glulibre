@@ -11,6 +11,7 @@ import Foundation
 /// model of the data we'll send to the notification content extension as userInfo for alerts
 struct AlertNotificationDictionary: Codable {
     var alertTitle: String?
+    var isTrendOnly: Bool?
     var bgReadingValues: [Double]?
     var bgReadingDatesAsDouble: [Double]?
     var isMgDl: Bool?
@@ -75,6 +76,7 @@ struct AlertNotificationPresentation {
     let date: Date?
     let isMgDl: Bool
     let slope: Int
+    let isTrendOnly: Bool
 
     var bodyContainsReading: Bool { body.contains("mg/dL") || body.contains("mmol/L") }
 
@@ -82,6 +84,7 @@ struct AlertNotificationPresentation {
         self.title = title.isEmpty ? (userInfo["alertTitle"] as? String ?? "Glucose update") : title
         self.body = body
         isMgDl = userInfo["isMgDl"] as? Bool ?? true
+        isTrendOnly = userInfo["isTrendOnly"] as? Bool ?? false
         slope = userInfo["slopeOrdinal"] as? Int ?? 0
         let values = userInfo["bgReadingValues"] as? [Double] ?? []
         let dates = userInfo["bgReadingDatesAsDouble"] as? [Double] ?? []
@@ -106,7 +109,7 @@ struct AlertNotificationPresentation {
         let paused = mode == "stale" || mode == "missing"
         let copy = AlertNotificationCopy(kind: paused ? 4 : 1, reading: "3.5 ↘", unit: "mmol/L")
         let info: [AnyHashable: Any] = mode == "missing" ? [:] : [
-            "bgReadingValues": [63.0], "isMgDl": false, "slopeOrdinal": 5,
+            "bgReadingValues": [63.0], "isMgDl": false, "slopeOrdinal": 5, "isTrendOnly": mode == "uncalibrated",
             "bgReadingDatesAsDouble": [Date().addingTimeInterval(paused ? -900 : -30).timeIntervalSince1970]]
         return Self(title: copy.title, body: copy.body, userInfo: info)
     }

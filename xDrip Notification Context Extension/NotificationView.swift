@@ -15,6 +15,10 @@ struct NotificationView: View {
                         Text(trend).font(.title2)
                         Text(presentation.isMgDl ? "mg/dL" : "mmol/L").foregroundStyle(.secondary)
                     }
+                    if presentation.isTrendOnly {
+                        Label("Not calibrated", systemImage: "exclamationmark.circle")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                 } else if presentation.date != nil {
                     Label("Reading out of date", systemImage: "clock.badge.exclamationmark")
                         .foregroundStyle(.secondary)

@@ -78,15 +78,18 @@ final class WatchGlanceTests: XCTestCase {
         let state = try JSONDecoder().decode(WatchState.self, from: data)
         XCTAssertNil(state.lastMeal)
         XCTAssertNil(state.generatedAt)
+        XCTAssertNil(state.isTrendOnly)
         XCTAssertEqual(state.bgReadingValues, [100])
     }
     func testNewSnapshotRoundTripAndMealRemoval() throws {
         var state = WatchState()
         state.generatedAt = now.timeIntervalSince1970
+        state.isTrendOnly = true
         state.lastMeal = WatchMealSnapshot(title: "Toast", eatenAt: now.timeIntervalSince1970 - 7200,
             state: "ready", riseMgDl: 25, detail: "Observed after this meal")
         var copy = try JSONDecoder().decode(WatchState.self, from: JSONEncoder().encode(state))
         XCTAssertEqual(copy.lastMeal, state.lastMeal)
+        XCTAssertEqual(copy.isTrendOnly, true)
         XCTAssertNotNil(state.asDictionary?["lastMeal"])
         state.lastMeal = nil
         copy = try JSONDecoder().decode(WatchState.self, from: JSONEncoder().encode(state))

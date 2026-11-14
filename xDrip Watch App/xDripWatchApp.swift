@@ -18,6 +18,9 @@ struct xDrip_Watch_AppApp: App {
                 RootView()
             }.environmentObject(watchState)
         }
+        .backgroundTask(.watchConnectivity) {
+            await watchState.finishBackgroundDelivery()
+        }
         
         // assign the custom view controller to show all watch notifications with snoozeCategory (which will be most of them)
         WKNotificationScene(controller: NotificationController.self, category: "snoozeCategoryIdentifier")

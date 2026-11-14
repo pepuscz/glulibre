@@ -58,6 +58,7 @@ final class WatchStateModel: NSObject, ObservableObject {
     @Published var requestingDataIconColor: Color = ConstantsAppleWatch.requestingDataIconColorInactive
     @Published var lastComplicationUpdateTimeStamp: Date = .distantPast
     @Published var lastMeal: WatchMealSnapshot?
+    @Published var isTrendOnly = false
     @Published var syncStatus = "Open the iPhone app to sync."
     @Published var isRefreshing = false
     private var lastAcceptedSnapshot: Double = 0
@@ -96,6 +97,25 @@ final class WatchStateModel: NSObject, ObservableObject {
         session.activate()
     }
     
+    /// Keep the system's background task alive until WCSession has delivered its
+    /// pending snapshot. The main-queue callbacks persist it and reload widgets.
+    /// AsyncPublisher releases its subscription when watchOS cancels the task.
+    @MainActor
+    func finishBackgroundDelivery() async {
+        if session.activationState != .activated { session.activate() }
+        let delivery = session.publisher(for: \.activationState)
+            .combineLatest(session.publisher(for: \.hasContentPending))
+            .receive(on: DispatchQueue.main)
+        for await (activation, pending) in delivery.values {
+            guard !Task.isCancelled else { return }
+            guard activation == .activated, !pending else { continue }
+            if let snapshot = session.receivedApplicationContext["watchState"] as? [String: Any] {
+                processWatchStateFromDictionary(dictionary: snapshot)
+            }
+            return
+        }
+    }
+
     // MARK: - Functions to provide context data to populate the views
     #if DEBUG && targetEnvironment(simulator)
     private func loadDemo() {
@@ -117,6 +137,7 @@ final class WatchStateModel: NSObject, ObservableObject {
                 state: collecting ? "collecting" : limited ? "limited" : "ready", riseMgDl: collecting || limited ? nil : 35,
                 detail: limited ? "Not enough sensor readings." : arguments.contains("--watch-overlap") ? "Overlapping meals" : "Observed after this meal")
         }
+        isTrendOnly = arguments.contains("--watch-uncalibrated")
         liveDataIsEnabled = true
         syncStatus = "Simulator sample · not sensor data"
     }
@@ -509,6 +530,7 @@ final class WatchStateModel: NSObject, ObservableObject {
                 UserDefaults.standard.set(data, forKey: cacheKey + ".data")
             }
             
+            isTrendOnly = dictionary["isTrendOnly"] as? Bool ?? false
             isMgDl = dictionary["isMgDl"] as? Bool ?? true
             slopeOrdinal = dictionary["slopeOrdinal"] as? Int ?? 0
             deltaValueInUserUnit = dictionary["deltaValueInUserUnit"] as? Double ?? 0
@@ -568,7 +590,7 @@ final class WatchStateModel: NSObject, ObservableObject {
             date.timeIntervalSince1970
         }
         
-        let complicationSharedUserDefaultsModel = ComplicationSharedUserDefaultsModel(bgReadingValues: bgReadingValues, bgReadingDatesAsDouble: bgReadingDatesAsDouble, isMgDl: isMgDl, slopeOrdinal: slopeOrdinal, deltaValueInUserUnit: deltaValueInUserUnit, urgentLowLimitInMgDl: urgentLowLimitInMgDl, lowLimitInMgDl: lowLimitInMgDl, highLimitInMgDl: highLimitInMgDl, urgentHighLimitInMgDl: urgentHighLimitInMgDl, keepAliveIsDisabled: keepAliveIsDisabled, liveDataIsEnabled: liveDataIsEnabled)
+        let complicationSharedUserDefaultsModel = ComplicationSharedUserDefaultsModel(bgReadingValues: bgReadingValues, bgReadingDatesAsDouble: bgReadingDatesAsDouble, isMgDl: isMgDl, slopeOrdinal: slopeOrdinal, deltaValueInUserUnit: deltaValueInUserUnit, urgentLowLimitInMgDl: urgentLowLimitInMgDl, lowLimitInMgDl: lowLimitInMgDl, highLimitInMgDl: highLimitInMgDl, urgentHighLimitInMgDl: urgentHighLimitInMgDl, keepAliveIsDisabled: keepAliveIsDisabled, liveDataIsEnabled: liveDataIsEnabled, isTrendOnly: isTrendOnly)
         
         // store the model in the shared user defaults using a name that is uniquely specific to this copy of the app as installed on
         // the user's device - this allows several copies of the app to be installed without cross-contamination of widget/complication data

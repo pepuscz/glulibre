@@ -37,6 +37,7 @@ struct WatchState: Codable {
     // Optional additions keep the phone/watch upgrade order backward compatible.
     var generatedAt: Double?
     var lastMeal: WatchMealSnapshot?
+    var isTrendOnly: Bool?
     
     // use this to track the AID/looping status if sent
     var deviceStatusCreatedAt: Double?

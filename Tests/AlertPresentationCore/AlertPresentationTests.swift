@@ -46,6 +46,18 @@ final class AlertPresentationTests: XCTestCase {
         XCTAssertFalse(model.isMgDl)
     }
 
+    func testTrendModeProvenanceSurvivesNotificationPayloadAndLegacyStillDecodes() throws {
+        var payload = AlertNotificationDictionary()
+        payload.isTrendOnly = true
+        payload.bgReadingValues = [100]
+        payload.bgReadingDatesAsDouble = [1_800_000_000]
+        let presentation = AlertNotificationPresentation(title: "Glucose update", body: "", userInfo: try XCTUnwrap(payload.asDictionary))
+        XCTAssertTrue(presentation.isTrendOnly)
+        let legacy = try JSONDecoder().decode(AlertNotificationDictionary.self, from: Data("{}".utf8))
+        XCTAssertNil(legacy.isTrendOnly)
+        XCTAssertFalse(AlertNotificationPresentation(title: "Glucose update", body: "", userInfo: [:]).isTrendOnly)
+    }
+
     func testContentTitleAndBodySurviveWatchDelivery() {
         let model = AlertNotificationPresentation(title: "Readings paused", body: "Open GluLibre if readings don’t resume.", userInfo: ["alertTitle": "MISSED READING"])
         XCTAssertEqual(model.title, "Readings paused")

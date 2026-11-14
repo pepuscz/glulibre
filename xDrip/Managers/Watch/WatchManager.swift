@@ -128,6 +128,7 @@ final class WatchManager: NSObject, ObservableObject {
         watchState.bgReadingValues = bgReadingValues
         watchState.bgReadingDatesAsDouble = bgReadingDatesAsDouble
         watchState.bgReadingSensorIDs = bgReadings.map { $0.sensor?.id ?? "" }
+        watchState.isTrendOnly = bgReadings.first?.deviceName?.hasSuffix(" · Trend mode") == true
         watchState.isMgDl = UserDefaults.standard.bloodGlucoseUnitIsMgDl
         watchState.slopeOrdinal = slopeOrdinal
         watchState.deltaValueInUserUnit = deltaValueInUserUnit
