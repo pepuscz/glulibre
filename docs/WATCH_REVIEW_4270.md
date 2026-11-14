@@ -24,7 +24,9 @@ The Watch remains a glance at **glucose → recent curve → last meal**. Sensor
 
 The seven Watch journeys were exercised on both simulator sizes. The chart test initially failed after adding the status, then passed after the layout correction. Screenshots were inspected; Crown tests use native rotation events, not swipes. All 126 Foundation package tests passed. Combined signed iPhone/Watch and Watch simulator builds passed.
 
-**Hardware boundary:** the physical Watch was unreachable during this review. Background delivery/cancellation, complications on real faces, mirrored notifications and the physical Crown’s feel still need device acceptance. Simulator screenshots and compilation do not prove these. This review does not claim build 4270 is installed on either physical device.
+**Device acceptance (14 November 2026):** build 4270 was installed and launched on the physical iPhone and Apple Watch Ultra; installed versions were read back on both. The Watch's accepted snapshot and complication shared cache matched the phone's latest reading and retained the uncalibrated flag. This confirms real phone-to-Watch delivery and cache propagation. All 6,092 pre-update readings and all sensor records were unchanged; meal files and saved adjustments matched the pre-update copies. Collection continued after the update.
+
+**Hardware boundary:** background delivery/cancellation over time, complications rendered on real faces, mirrored notifications and the physical Crown’s feel still need device acceptance. Successful delivery and simulator tests do not prove those behaviors.
 
 ## Design sources
 
