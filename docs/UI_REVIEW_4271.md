@@ -6,4 +6,6 @@
 
 Validation: iPhone simulator build and signed combined iPhone/Watch build passed. Existing chart-visibility and chart-options journeys passed (2/2); inspected the fresh/stale screenshots and retained information screen. No sensor, persistence or notification-policy changes. Watch complication changes compiled; on-face rendering has not been visually verified in this pass.
 
+Device acceptance (14 November 2026): installed and launched 4271 on the physical iPhone and Apple Watch Ultra; read back both versions. The Watch snapshot and complication cache matched the phone's latest reading. All 6,115 pre-update readings, sensor records, meal files and saved adjustments were unchanged. The existing sensor connection resumed without starting a new session. The only changed Application Support file was the expected WatchConnectivity application context.
+
 ![Compact Today legend, synthetic simulator data](media/ui-4271/today.png)
