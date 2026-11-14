@@ -15,6 +15,16 @@ final class JournalManagement: ObservableObject {
   @Published private(set) var records: [TreatmentEntry] = []
   @Published private(set) var devices: [BluetoothPeripheral] = []
 
+  var activeSmartGuideSerial: String? {
+    devices.first(where: { $0.blePeripheral.isSmartGuide && $0.blePeripheral.shouldconnect })?.blePeripheral.smartGuideSerial
+  }
+
+  func refreshSmartGuideCalibration(serial: String) {
+    guard let transmitter = managerProvider()?.getCGMTransmitter() as? CGMSmartGuideTransmitter,
+          transmitter.serial == serial else { return }
+    transmitter.refreshCalibrationAvailability()
+  }
+
   var isSearchingForSmartGuide: Bool {
     guard let manager = managerProvider(),
           let transmitter = manager.tempBlueToothTransmitterWhileScanningForNewBluetoothPeripheral as? CGMSmartGuideTransmitter else { return false }
@@ -112,13 +122,71 @@ final class JournalManagement: ObservableObject {
   func calibrateSmartGuide(serial: String, input: SmartGuideCalibration.Input, completion: @escaping (String) -> Void) {
     guard let transmitter = managerProvider()?.getCGMTransmitter() as? CGMSmartGuideTransmitter,
           transmitter.serial == serial else { completion("Reconnect this SmartGuide sensor first."); return }
-    transmitter.calibrate(input, completion: completion)
+    do {
+      if let start = UserDefaults.standard.object(forKey: "GluLibre.SmartGuide.anchor." + serial) as? Date,
+         let reference = try? GlucoseAdjustment.make(serial: serial, minute: input.minute(start: start, now: Date()),
+            meter: Double(input.mgDl), at: input.measuredAt, samples: earlierReadings(serial: serial)) {
+        try GlucoseAdjustmentStore.shared.save(reference)
+      }
+    } catch { completion("Couldn’t save the meter reference. Try again."); return }
+    transmitter.calibrate(input) { [weak self, weak transmitter] result in
+      do {
+        if let transmitter { try self?.reconcileAdjustment(serial: serial, transmitter: transmitter) }
+        completion(result)
+      } catch { completion(result + " Earlier readings couldn’t be updated.") }
+    }
   }
 
-  func checkSmartGuideCalibration(serial: String) {
+  func earlierReadings(serial: String) throws -> [GlucoseAdjustment.Sample] {
+    guard let context = contextProvider() else { throw GlucoseAdjustment.Failure.invalid }
+    let request: NSFetchRequest<BgReading> = BgReading.fetchRequest()
+    request.predicate = NSPredicate(format: "deviceName BEGINSWITH %@", "AC-" + serial)
+    request.sortDescriptors = [NSSortDescriptor(key: "timeStamp", ascending: true)]
+    let live = try context.fetch(request).compactMap { reading -> GlucoseAdjustment.Sample? in
+      guard let id = reading.sensor?.id else { return nil }
+      return .init(date: reading.timeStamp, value: reading.calculatedValue, sensorID: id,
+                   trendOnly: reading.deviceName?.hasSuffix(" · Trend mode") == true)
+    }
+    let dates = Set(live.map(\.date))
+    let restored = try JournalRecoveredHistory.shared.all().filter {
+      $0.deviceName?.hasPrefix("AC-" + serial) == true && !dates.contains($0.date)
+    }.compactMap { reading -> GlucoseAdjustment.Sample? in
+      guard let id = reading.sensorID else { return nil }
+      return .init(date: reading.date, value: reading.mgDl, sensorID: id, trendOnly: reading.deviceName?.hasSuffix(" · Trend mode") == true)
+    }
+    return (live + restored).sorted { $0.date < $1.date }
+  }
+
+  private func reconcileAdjustment(serial: String, transmitter: CGMSmartGuideTransmitter) throws {
+    guard let attempt = try transmitter.calibrationAttemptForReview(), attempt.outcome != .unconfirmed else { return }
+    for var reference in try GlucoseAdjustmentStore.shared.all() where reference.version == 1 && reference.serial == serial
+        && reference.sensorMinute == attempt.minute && Int(reference.meterMgDl) == attempt.mgDl {
+      reference.accepted = attempt.outcome == .accepted
+      try GlucoseAdjustmentStore.shared.save(reference)
+    }
+  }
+
+  func saveHistoricalMeter(serial: String, value: Double, usesMgDl: Bool, measuredAt: Date) throws {
+    guard measuredAt <= Date(), let start = UserDefaults.standard.object(forKey: "GluLibre.SmartGuide.anchor." + serial) as? Date,
+          value.isFinite else { throw GlucoseAdjustment.Failure.invalid }
+    let reference = try GlucoseAdjustment.historical(serial: serial,
+        minute: Int(measuredAt.timeIntervalSince(start) / 60), meter: usesMgDl ? value : value * 18.0182,
+        at: measuredAt, samples: earlierReadings(serial: serial))
+    try GlucoseAdjustmentStore.shared.save(reference)
+  }
+
+  func checkSmartGuideCalibration(serial: String, completion: ((String) -> Void)? = nil) {
+    let finish: (String) -> Void = { [weak self] result in
+      if let completion { completion(result) } else { self?.message = result }
+    }
     guard let transmitter = managerProvider()?.getCGMTransmitter() as? CGMSmartGuideTransmitter,
-          transmitter.serial == serial else { message = "Reconnect this SmartGuide sensor first."; return }
-    transmitter.checkCalibration { [weak self] in self?.message = $0 }
+          transmitter.serial == serial else { finish("Reconnect this SmartGuide sensor first."); return }
+    transmitter.checkCalibration { [weak self, weak transmitter] result in
+      do {
+        if let transmitter { try self?.reconcileAdjustment(serial: serial, transmitter: transmitter) }
+        finish(result)
+      } catch { finish(result + " Earlier readings couldn’t be updated.") }
+    }
   }
 
   func refresh() {

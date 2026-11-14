@@ -6,7 +6,7 @@ Meal photos, notes, timestamps, AI estimates and glucose history are stored loca
 
 ## Recovery
 
-Settings → **Backup & restore** exports a password-encrypted `.glulibre` file through the native Files picker. It contains meals, original saved photo bytes, comments, estimates/corrections and glucose history (including raw numeric attributes and source identifiers). It does **not** contain API keys, live sensor pairing, settings, calibration objects or treatment records. Retain the password separately; there is no password reset for an encrypted archive.
+Settings → **Backup & restore** exports a password-encrypted `.glulibre` file through the native Files picker. It contains meals, original saved photo bytes, comments, estimates/corrections and glucose history (including raw numeric attributes and source identifiers). It also includes historical-adjustment references: meter values, times, sensor identifiers, source samples, confirmation state and method version. These references are stored locally and do not send calibration commands when restored. The archive does **not** contain API keys, live sensor pairing, settings, operational calibration attempts or treatment records. Retain the password separately; there is no password reset for an encrypted archive.
 
 Restore validates the entire archive and photo hashes, then adds missing records. Existing IDs and edits win. Restored glucose is journal history only: it never enters the live sensor, alert, calibration or Health-write pipeline. Imported meals are not queued for AI. A restore interrupted between the two local stores can be safely retried; it never replaces the current database. Files over 256 MB are not supported in this version.
 

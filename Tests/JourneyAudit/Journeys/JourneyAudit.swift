@@ -129,15 +129,13 @@ final class JourneyAudit: XCTestCase {
         app.launch()
         app.tabBars.buttons["Settings"].tap()
         XCTAssertTrue(tap("Sensor", scroll: true))
-        app.buttons["sensor.setup"].tap()
-        app.buttons["sensor.smartguide"].tap()
-        let serial = app.textFields["smartguide.serial"]
-        XCTAssertTrue(serial.waitForExistence(timeout: 5))
-        serial.tap()
-        serial.typeText("12345678\n")
-        XCTAssertTrue(tap("Calibrate with meter", scroll: true))
+        XCTAssertTrue(app.buttons["sensor.calibrate"].waitForExistence(timeout: 5))
+        app.buttons["sensor.calibrate"].tap()
         let review = app.buttons["smartguide.calibration.review"]
         XCTAssertTrue(review.waitForExistence(timeout: 5))
+        XCTAssertEqual(review.label, "Calibrate")
+        XCTAssertEqual(app.buttons["smartguide.calibration.close"].label, "Cancel")
+        XCTAssertFalse(app.buttons["Done"].exists)
         XCTAssertFalse(review.isEnabled)
         let value = app.textFields["smartguide.calibration.value"]
         value.tap()
@@ -161,7 +159,59 @@ final class JourneyAudit: XCTestCase {
         app.alerts.buttons["Cancel"].tap()
         // Never send to hardware from a UI fixture. Cancelling makes no write.
         XCTAssertTrue(review.isEnabled)
-        app.buttons["Done"].tap()
+        app.buttons["smartguide.calibration.check"].tap()
+        XCTAssertTrue(app.staticTexts["smartguide.calibration.result"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["smartguide.calibration.result"].label, "Reconnect this SmartGuide sensor first.")
+        capture("smartguide-calibration-inline-status")
+        // The read-only check above proves this simulator has no transmitter.
+        // Exercise the actual confirmation action through that guard, never hardware.
+        review.tap()
+        app.alerts.buttons["Send calibration"].tap()
+        XCTAssertTrue(app.staticTexts["smartguide.calibration.result"].waitForExistence(timeout: 5))
+        XCTAssertFalse(review.isEnabled)
+        XCTAssertNotEqual(value.value as? String, "100")
+        capture("smartguide-calibration-send-feedback")
+        app.buttons["smartguide.calibration.close"].tap()
+    }
+
+    func testSmartGuideCalibrationStaysVisibleWhenDisconnected() {
+        app.terminate()
+        app.launchArguments = ["--journal-ui-testing", "--food-preview", "--smartguide-calibration-preview", "--smartguide-calibration-disconnected"]
+        app.launch()
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(tap("Sensor", scroll: true))
+        XCTAssertTrue(app.buttons["sensor.calibrate"].waitForExistence(timeout: 5))
+        app.buttons["sensor.calibrate"].tap()
+        XCTAssertTrue(app.staticTexts["smartguide.calibration.unavailable"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Reconnect Bluetooth"].exists)
+        XCTAssertFalse(app.buttons["smartguide.calibration.review"].isEnabled)
+        capture("smartguide-calibration-disconnected")
+    }
+
+    func testEarlierReadingsSwitchesWithoutChangingOriginals() {
+        app.terminate()
+        app.launchArguments = ["--journal-ui-testing", "--food-preview", "--smartguide-calibration-preview", "--history-adjustment-preview"]
+        app.launch()
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(tap("Sensor", scroll: true))
+        app.buttons["sensor.earlier"].tap()
+        XCTAssertTrue(app.staticTexts["Estimated adjustment"].waitForExistence(timeout: 5))
+        capture("history-adjusted")
+        app.buttons["history.addMeter"].tap()
+        XCTAssertTrue(app.textFields["history.meterValue"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Save"].isEnabled)
+        app.textFields["history.meterValue"].tap()
+        app.textFields["history.meterValue"].typeText("5,5")
+        XCTAssertTrue(app.buttons["Save"].isEnabled)
+        capture("history-meter-entry")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts["Estimated adjustment"].waitForExistence(timeout: 5))
+        app.segmentedControls.buttons["Original"].tap()
+        XCTAssertTrue(app.staticTexts["Recorded readings"].exists)
+        app.segmentedControls.buttons["Adjusted"].tap()
+        XCTAssertTrue(app.staticTexts["Estimated adjustment"].exists)
+        XCTAssertTrue(tap("About this estimate", scroll: true))
+        capture("history-estimate-details")
     }
 
     func testOfflineLicensesRemainAvailable() {

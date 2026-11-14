@@ -38,6 +38,7 @@ final class SmartGuideConnectionState: ObservableObject {
     @Published var model = ""
     @Published var firmware = ""
     @Published var calibrationAvailable = false
+    @Published var calibrationUnavailableReason = "Connect your sensor to calibrate."
     @Published var canCheckCalibration = false
     @Published var calibrationResult = ""
     @Published var canInitialize = false

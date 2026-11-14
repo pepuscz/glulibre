@@ -8,7 +8,7 @@ enum SmartGuideCalibration {
         var errorDescription: String? {
             switch self {
             case .invalidValue: return "Enter a meter reading within 2.3–22.1 mmol/L (42–398 mg/dL)."
-            case .staleMeasurement: return "Take a new finger-stick measurement. It must be less than five minutes old."
+            case .staleMeasurement: return "Take a new finger-stick measurement. It must be less than three minutes old."
             case .unavailable: return "The sensor isn’t ready for calibration. Wait for its calibration request."
             case .recentAttempt: return "Wait before calibrating again, then take a new meter reading."
             case .uncertainAttempt: return "The previous calibration is unconfirmed. Check its status before sending another value."
@@ -30,7 +30,7 @@ enum SmartGuideCalibration {
         }
 
         func minute(start: Date, now: Date) throws -> Int {
-            guard (0..<300).contains(now.timeIntervalSince(measuredAt)) else { throw Failure.staleMeasurement }
+            guard (0..<180).contains(now.timeIntervalSince(measuredAt)) else { throw Failure.staleMeasurement }
             let elapsed = measuredAt.timeIntervalSince(start)
             guard elapsed >= 3600, elapsed < Double(SmartGuideProtocol.maximumMinutes * 60) else {
                 throw Failure.unavailable
@@ -81,8 +81,21 @@ enum SmartGuideCalibration {
         let value = input.mgDl
         // Low nibble = capillary whole blood; high nibble = finger. Nordic's
         // older encoder shifts by eight (losing the location); follow CGMS, not that bug.
+        // AccuChekKit CalibratePacket sends zero for next-time and record number.
+        // The sensor supplies its schedule in the readback; do not echo it into a write.
         return packet([4, UInt8(value & 255), UInt8(value >> 8), UInt8(minute & 255), UInt8(minute >> 8),
-                       0x11, UInt8(previous.nextMinute & 255), UInt8(previous.nextMinute >> 8), 0, 0, 0], usesCRC: usesCRC)
+                       0x11, 0, 0, 0, 0, 0], usesCRC: usesCRC)
+    }
+
+    /// Either ATT completion or the optional CGMS acknowledgement starts readback.
+    /// Neither proves acceptance, and receiving both must not start it twice.
+    struct ReadbackGate {
+        private var started = false
+        mutating func submissionCompleted() -> Bool {
+            guard !started else { return false }
+            started = true
+            return true
+        }
     }
 
     private static func packet(_ bytes: [UInt8], usesCRC: Bool) -> Data {

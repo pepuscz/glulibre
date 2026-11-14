@@ -139,9 +139,8 @@ struct SmartGuideSetupView: View {
       }
       Section {
         if serial.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == state.serial,
-           state.canCheckCalibration {
+           !state.serial.isEmpty {
           Button("Calibrate with meter") { calibrating = true }
-            .disabled(!state.calibrationAvailable)
             .accessibilityIdentifier("smartguide.calibrate")
           Button("Check calibration status") { management.checkSmartGuideCalibration(serial: state.serial) }
           if !state.calibrationResult.isEmpty { Text(state.calibrationResult).font(.subheadline).foregroundStyle(.secondary) }
@@ -178,6 +177,7 @@ struct SmartGuideSetupView: View {
 }
 
 struct SmartGuideCalibrationView: View {
+  @ObservedObject private var connection = SmartGuideConnectionState.shared
   @ObservedObject var management: JournalManagement
   let serial: String
   @Environment(\.dismiss) private var dismiss
@@ -186,6 +186,7 @@ struct SmartGuideCalibrationView: View {
   @State private var measuredAt = Date()
   @State private var confirmation = false
   @State private var sending = false
+  @State private var checking = false
   @State private var confirmedInput: SmartGuideCalibration.Input?
   @State private var result: String?
   @FocusState private var editing: Bool
@@ -197,6 +198,13 @@ struct SmartGuideCalibrationView: View {
   var body: some View {
     NavigationStack {
       Form {
+        if !connection.calibrationAvailable || connection.serial != serial {
+          Section {
+            Text(connection.serial == serial ? connection.calibrationUnavailableReason : "Connect your sensor to calibrate.")
+              .foregroundStyle(.secondary).accessibilityIdentifier("smartguide.calibration.unavailable")
+            Button("Reconnect Bluetooth") { management.connectSmartGuide(serial: serial) }
+          }
+        }
         Section {
           TextField("Meter reading", text: $value).keyboardType(.decimalPad).focused($editing)
             .accessibilityIdentifier("smartguide.calibration.value")
@@ -207,21 +215,39 @@ struct SmartGuideCalibrationView: View {
             .accessibilityIdentifier("smartguide.calibration.units")
           DatePicker("Measured", selection: $measuredAt, in: ...Date(), displayedComponents: [.hourAndMinute])
         } footer: {
-          Text("Use a finger-stick meter reading less than five minutes old, with stable glucose—not just after food, exercise or insulin. Never enter the sensor’s own value.")
-        }.disabled(sending)
+          Text("Use a meter reading less than 3 minutes old, with stable glucose.")
+        }.disabled(sending || checking)
         Section {
-          Button(sending ? "Waiting for sensor…" : "Review calibration") {
+          if let result { Text(result).accessibilityIdentifier("smartguide.calibration.result") }
+          Button(checking ? "Checking…" : "Check calibration status") {
+            checking = true
+            result = nil
+            management.checkSmartGuideCalibration(serial: serial) { message in
+              result = message
+              checking = false
+            }
+          }
+            .disabled(sending || checking || !connection.canCheckCalibration || connection.serial != serial)
+            .accessibilityIdentifier("smartguide.calibration.check")
+        }
+      }
+      .navigationTitle("Calibration").navigationBarTitleDisplayMode(.inline)
+      .onAppear { management.refreshSmartGuideCalibration(serial: serial) }
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(result == nil ? "Cancel" : "Close") { dismiss() }.disabled(sending)
+            .accessibilityIdentifier("smartguide.calibration.close")
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button(sending ? "Sending…" : "Calibrate") {
             editing = false
             confirmedInput = input
             confirmation = confirmedInput != nil
           }
-          .disabled(sending || input == nil || !(0..<300).contains(Date().timeIntervalSince(measuredAt)))
+          .disabled(sending || checking || input == nil || !connection.calibrationAvailable || connection.serial != serial || !(0..<180).contains(Date().timeIntervalSince(measuredAt)))
           .accessibilityIdentifier("smartguide.calibration.review")
-          if let result { Text(result).accessibilityIdentifier("smartguide.calibration.result") }
         }
       }
-      .navigationTitle("Calibrate").navigationBarTitleDisplayMode(.inline)
-      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.disabled(sending) } }
       .alert("Send \(value) \(usesMgDl ? "mg/dL" : "mmol/L")?", isPresented: $confirmation) {
         Button("Cancel", role: .cancel) { confirmedInput = nil }
         Button("Send calibration") {
@@ -234,7 +260,7 @@ struct SmartGuideCalibrationView: View {
           }
         }
       } message: {
-        Text("Confirm the value and units against your meter. A wrong calibration cannot be undone and may require a new sensor.")
+        Text("Check against your meter. A wrong value cannot be undone and may require a new sensor.")
       }
       .interactiveDismissDisabled(sending)
     }

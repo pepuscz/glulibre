@@ -4,6 +4,28 @@ import XCTest
 @testable import SmartGuideCore
 
 final class SmartGuideProtocolTests: XCTestCase {
+    func testRestoredDiscoveryWaitsForBothCallbacksInEitherOrder() {
+        let info: Set<String> = ["2A29", "2A24", "2A25"]
+        let glucose = SmartGuideProtocol.Discovery.required.subtracting(info)
+        for reversed in [false, true] {
+            var discovery = SmartGuideProtocol.Discovery()
+            let callbacks = reversed ? [("181F", glucose), ("180A", info)] : [("180A", info), ("181F", glucose)]
+            XCTAssertEqual(discovery.received(service: "1829", characteristics: []), .waiting)
+            XCTAssertEqual(discovery.received(service: callbacks[0].0, characteristics: callbacks[0].1), .waiting)
+            XCTAssertEqual(discovery.received(service: callbacks[0].0, characteristics: callbacks[0].1), .waiting)
+            XCTAssertEqual(discovery.received(service: callbacks[1].0, characteristics: callbacks[1].1), .ready)
+            XCTAssertEqual(discovery.received(service: callbacks[1].0, characteristics: callbacks[1].1), .waiting)
+        }
+    }
+
+    func testDiscoveryStillRejectsAnIncompleteProfileAfterBothCallbacks() {
+        var discovery = SmartGuideProtocol.Discovery()
+        XCTAssertEqual(discovery.received(service: "180A", characteristics: ["2A29"]), .waiting)
+        XCTAssertEqual(discovery.received(service: "181F", characteristics: ["2AA7"]), .unsupported)
+        discovery = SmartGuideProtocol.Discovery()
+        XCTAssertEqual(discovery.received(service: "181F", characteristics: []), .waiting)
+    }
+
     func testTrendModeRetainsFaultGates() throws {
         let observed = try SmartGuideProtocol.sensorStatus(Data([0x41, 0, 0, 0x0a, 0, 0x9e, 7]), crcRequired: true)
         XCTAssertTrue(observed.status.calibrationRequired)
@@ -187,5 +209,29 @@ final class SmartGuideProtocolTests: XCTestCase {
         XCTAssertFalse(SmartGuideProtocol.validSerial("123 45678"))
         XCTAssertEqual(SmartGuideProtocol.history(from: 60), Data([1, 3, 1, 60, 0]))
         XCTAssertEqual(SmartGuideProtocol.history(from: 300), Data([1, 3, 1, 44, 1]))
+    }
+}
+
+extension SmartGuideProtocolTests {
+    func testStatusTimeoutCanRetryWithoutStaleWatchdogInterruptingNewRead() throws {
+        var read = SmartGuideProtocol.StatusRead()
+        let first = try XCTUnwrap(read.begin())
+        XCTAssertNil(read.begin(), "Do not enqueue overlapping status reads")
+        XCTAssertTrue(read.expire(first), "The missing response must trigger recovery")
+        let retry = try XCTUnwrap(read.begin(), "A timeout must not permanently block status reads")
+        XCTAssertFalse(read.expire(first), "An old watchdog cannot interrupt the retry")
+        XCTAssertTrue(read.expire(retry))
+        XCTAssertFalse(read.expire(retry), "Recover only once per timeout")
+    }
+
+    func testStatusReplyDisconnectOrPauseInvalidatesItsWatchdog() throws {
+        var read = SmartGuideProtocol.StatusRead()
+        let first = try XCTUnwrap(read.begin())
+        read.complete()
+        XCTAssertFalse(read.expire(first))
+        let next = try XCTUnwrap(read.begin())
+        XCTAssertFalse(read.expire(first))
+        read.complete()
+        XCTAssertFalse(read.expire(next))
     }
 }

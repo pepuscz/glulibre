@@ -94,6 +94,11 @@ final class JournalExperienceCoordinator {
         state.calibrationAvailable = true
         state.canCheckCalibration = true
         state.message = "Calibration needed"
+        if arguments.contains("--smartguide-calibration-disconnected") {
+          state.calibrationAvailable = false
+          state.canCheckCalibration = false
+          state.calibrationUnavailableReason = "Connect your sensor to calibrate."
+        }
       }
       if JournalModel.isSimulatorUITest && arguments.contains("--journal-watch-default") {
         UserDefaults.standard.removeObject(forKey: UserDefaults.Key.showDataInWatchComplications.rawValue)

@@ -8,6 +8,7 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
     let serial: String
     private weak var receiver: CGMTransmitterDelegate?
     private var characteristics: [String: CBCharacteristic] = [:]
+    private var discovery = SmartGuideProtocol.Discovery()
     private weak var connectedPeripheral: CBPeripheral?
     private var usesCRC: Bool?
     private var capabilities: SmartGuideProtocol.Capabilities?
@@ -19,6 +20,8 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
     private var calibrationInput: SmartGuideCalibration.Input?
     private var calibrationCompletion: ((String) -> Void)?
     private var calibrationToken = UUID()
+    private var calibrationReadback = SmartGuideCalibration.ReadbackGate()
+    private var controlWrites: [UInt8] = []
     private var status = SmartGuideProtocol.Status()
     private var start: Date?
     private var currentMinutes = 0
@@ -30,8 +33,7 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
     private var reportedStop = false
     private var historyRequested = false
     private var collectingHistory = false
-    private var statusReadPending = false
-    private var statusReadToken = UUID()
+    private var statusRead = SmartGuideProtocol.StatusRead()
     private var generation = UUID()
     private var initializationRequested = false
     private var awaitingInitialization = false
@@ -69,6 +71,8 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
         awaitingInitialization = false
         connectedPeripheral = peripheral
         characteristics.removeAll()
+        controlWrites.removeAll()
+        discovery = SmartGuideProtocol.Discovery()
         enabledNotifications.removeAll()
         usesCRC = nil
         capabilities = nil
@@ -80,7 +84,7 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
         adopted = false
         historyRequested = false
         collectingHistory = false
-        statusReadPending = false
+        statusRead.complete()
         publish("Pairing… Enter the PIN from the blue cap if asked.")
         super.centralManager(central, didConnect: peripheral)
         // CoreBluetooth presents the PIN prompt when an encrypted characteristic is read.
@@ -96,8 +100,12 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
         DispatchQueue.global().asyncAfter(deadline: .now() + 90) { [weak self] in
             self?.performOnBluetoothQueue { [weak self] in
                 guard let self, self.generation == token, !self.adopted, !self.awaitingInitialization,
-                      self.initializationToken == nil else { return }
-                self.fail("Pairing did not finish. Check the cap PIN and Bluetooth permission, then retry.")
+                      self.initializationToken == nil, !self.blocked else { return }
+                if UserDefaults.standard.object(forKey: self.anchorKey) is Date {
+                    self.recoverConnection("Setup timed out for saved sensor")
+                } else {
+                    self.fail("Pairing did not finish. Check the cap PIN and Bluetooth permission, then retry.")
+                }
             }
         }
     }
@@ -109,6 +117,8 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
         initializationRequested = false
         awaitingInitialization = false
         connectedPeripheral = nil
+        statusRead.complete()
+        controlWrites.removeAll()
         adopted = false
         pending.removeAll()
         if !blocked { publish("Reconnecting…") }
@@ -116,19 +126,22 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
     }
 
     override func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        guard !blocked else { return }
+        guard !blocked, peripheral == connectedPeripheral else { return }
+        let serviceID = service.uuid.uuidString.uppercased()
+        guard SmartGuideProtocol.Discovery.services.contains(serviceID) else { return }
         guard error == nil else { fail("Couldn’t read SmartGuide services. Retry pairing."); return }
         for characteristic in service.characteristics ?? [] {
             characteristics[characteristic.uuid.uuidString.uppercased()] = characteristic
         }
-        // Wait for both services; don't let the generic one-characteristic path subscribe early.
-        guard peripheral.services?.allSatisfy({ $0.characteristics != nil }) == true else { return }
-        guard ["2A29", "2A24", "2A25", SmartGuideProtocol.feature, SmartGuideProtocol.status,
-               SmartGuideProtocol.sessionStart, SmartGuideProtocol.measurement, SmartGuideProtocol.recordAccess]
-            .allSatisfy({ characteristics[$0] != nil }) else {
+        diagnostic("Discovered service \(serviceID): \((service.characteristics ?? []).map { $0.uuid.uuidString }.sorted().joined(separator: ","))")
+        // Cached CBService.characteristics is not evidence that its callback arrived.
+        switch discovery.received(service: serviceID, characteristics: Set((service.characteristics ?? []).map { $0.uuid.uuidString.uppercased() })) {
+        case .waiting: return
+        case .unsupported:
             fail("This sensor’s Bluetooth profile isn’t supported."); return
+        case .ready:
+            read("2A29")
         }
-        read("2A29")
     }
 
     private func read(_ uuid: String) {
@@ -140,7 +153,7 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
     }
 
     override func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard !blocked else { return }
+        guard !blocked, peripheral == connectedPeripheral else { return }
         if characteristic.uuid.uuidString.uppercased() == SmartGuideProtocol.controlPoint, error != nil {
             finishCalibration("Calibration couldn’t be read. Nothing will be resent; reconnect and check its status.")
             return
@@ -180,7 +193,7 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
             case SmartGuideProtocol.status:
                 guard let usesCRC else { return }
                 let result = try SmartGuideProtocol.sensorStatus(data, crcRequired: usesCRC)
-                statusReadPending = false
+                statusRead.complete()
                 statusReceivedAt = Date()
                 currentMinutes = result.minutes
                 status = result.status
@@ -304,17 +317,14 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
     }
 
     private func readStatus() {
-        guard !statusReadPending else { return }
-        statusReadPending = true
-        statusReadToken = UUID()
-        let token = statusReadToken
+        guard !blocked, let token = statusRead.begin() else { return }
         let connection = generation
         read(SmartGuideProtocol.status)
         DispatchQueue.global().asyncAfter(deadline: .now() + 20) { [weak self] in
             self?.performOnBluetoothQueue { [weak self] in
                 guard let self, self.generation == connection,
-                      self.statusReadToken == token, self.statusReadPending, !self.blocked else { return }
-                self.fail("Sensor status timed out. No unverified readings were added. Reconnect to retry.")
+                      !self.blocked, self.statusRead.expire(token) else { return }
+                self.recoverConnection("Status read timed out")
             }
         }
     }
@@ -332,14 +342,16 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
     }
 
     private func subscribeCollection() {
+        diagnostic("Calibration transport: feature=\(capabilities?.calibrationSupported == true), controlProperties=\(characteristics[SmartGuideProtocol.controlPoint]?.properties.rawValue ?? 0), available=\(calibrationTransportAvailable)")
         subscribe(SmartGuideProtocol.measurement)
         subscribe(SmartGuideProtocol.recordAccess)
         if calibrationTransportAvailable { subscribe(SmartGuideProtocol.controlPoint) }
     }
 
     override func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
-        guard !blocked else { return }
+        guard !blocked, peripheral == connectedPeripheral else { return }
         if characteristic.uuid.uuidString.uppercased() == SmartGuideProtocol.controlPoint {
+            diagnostic("Calibration indications: enabled=\(characteristic.isNotifying), error=\(error.map { String(describing: $0) } ?? "none")")
             if error == nil && characteristic.isNotifying {
                 enabledNotifications.insert(SmartGuideProtocol.controlPoint)
             }
@@ -384,8 +396,14 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
             return
         }
         if characteristic.uuid.uuidString.uppercased() == SmartGuideProtocol.controlPoint {
-            if error != nil { finishCalibration("Calibration wasn’t confirmed. Check its status before trying again.") }
-            // ATT write completion is NOT a successful sensor calibration.
+            let opcode = controlWrites.isEmpty ? nil : controlWrites.removeFirst()
+            if error != nil {
+                finishCalibration("Calibration wasn’t confirmed. Check its status before trying again.")
+            } else if opcode == 4 && calibrationPhase == .acknowledgement {
+                // Some SmartGuide firmware omits the separate CGMS acknowledgement.
+                // ATT completion permits readback, never reporting calibration success.
+                beginCalibrationReadback()
+            }
             return
         }
         if error != nil {
@@ -498,17 +516,36 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
             permitsNew = false
             previous = "Calibration history couldn’t be read. No calibration will be sent."
         }
+        let reason: String
+        if !connected { reason = "Connect your sensor to calibrate." }
+        else if !supportsCalibration { reason = "Calibration connection is unavailable. Reconnect Bluetooth and try again." }
+        else if currentMinutes < 60 { reason = "Wait for warm-up to finish." }
+        else if !permitsNew { reason = previous }
+        else if collectingHistory { reason = "Finishing the sensor history download…" }
+        else if calibrationPhase != .idle { reason = "Checking calibration…" }
+        else if !available { reason = status.message ?? "Wait for the sensor to request calibration." }
+        else { reason = "" }
         DispatchQueue.main.async {
             let state = SmartGuideConnectionState.shared
             state.model = model
             state.firmware = version
             state.calibrationAvailable = available && permitsNew
+            state.calibrationUnavailableReason = reason
             state.canCheckCalibration = canCheck
             state.calibrationResult = previous
         }
     }
 
     /// Entry point is main-thread only so ownership is checked against the live manager.
+    func calibrationAttemptForReview() throws -> SmartGuideCalibration.Attempt? { try attemptStore.load() }
+
+    func refreshCalibrationAvailability() {
+        performOnBluetoothQueue { [weak self] in
+            guard let self, !self.blocked, self.adopted else { return }
+            self.readStatus()
+        }
+    }
+
     func calibrate(_ input: SmartGuideCalibration.Input, completion: @escaping (String) -> Void) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard isActiveCollector else { completion("Connect this sensor before calibrating."); return }
@@ -548,6 +585,7 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
             }
             self.calibrationCompletion = completion
             self.calibrationPhase = .confirmation
+            self.diagnostic("Reading stored calibration status")
             self.startCalibrationTimeout()
             self.writeControl(SmartGuideCalibration.lastRecord(usesCRC: usesCRC))
             self.publishCapabilities()
@@ -571,12 +609,15 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
             finishCalibration("Calibration connection is unavailable. Nothing will be resent.")
             return
         }
+        guard let opcode = data.first else { return }
+        controlWrites.append(opcode)
         peripheral.writeValue(data, for: characteristic, type: .withResponse)
     }
 
     private func handleCalibrationResponse(_ response: SmartGuideCalibration.Response) throws {
         switch response {
         case .record(let record):
+            diagnostic("Calibration record: number=\(record.number), minute=\(record.minute), pending=\(record.pending), rejected=\(record.rejected)")
             if calibrationPhase == .previousRecord {
                 guard readyForCalibration, let input = calibrationInput, let start, let usesCRC else {
                     throw SmartGuideCalibration.Failure.unavailable
@@ -592,12 +633,17 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
                     minute: try input.minute(start: start, now: now), previousRecord: record.number)
                 // If durable storage fails, do not issue the irreversible write.
                 try attemptStore.save(attempt)
+                calibrationReadback = SmartGuideCalibration.ReadbackGate()
                 calibrationPhase = .acknowledgement
                 writeControl(data)
             } else if calibrationPhase == .confirmation {
                 if var attempt = try attemptStore.load() {
                     attempt.reconcile(record)
                     try attemptStore.save(attempt)
+                    if attempt.outcome == .unconfirmed {
+                        scheduleCalibrationReadback()
+                        return
+                    }
                     finishCalibration(calibrationResult(attempt))
                 } else if record.number == 0 {
                     finishCalibration("No calibration is stored on the sensor.")
@@ -609,17 +655,38 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
                 readStatus()
             }
         case .acknowledgement(let request, let result):
+            // A late optional Set acknowledgement can arrive after readback began.
+            if request == 4 && calibrationInput == nil { return }
+            if calibrationPhase == .confirmation && request == 4 && result == 1 { return }
             let expected: UInt8 = calibrationPhase == .acknowledgement ? 4 : 5
-            guard request == expected else { throw SmartGuideProtocol.Failure.malformed }
+            guard request == expected || (calibrationPhase == .confirmation && request == 4) else { throw SmartGuideProtocol.Failure.malformed }
             if result != 1 {
                 if request == 4, var attempt = try attemptStore.load() {
                     attempt.outcome = .rejected
                     try attemptStore.save(attempt)
                 }
                 finishCalibration("The sensor declined the calibration operation (code \(result)). No automatic retry. Use Roche’s app if this firmware isn’t compatible.")
-            } else if request == 4, let usesCRC {
-                calibrationPhase = .confirmation
-                writeControl(SmartGuideCalibration.lastRecord(usesCRC: usesCRC))
+            } else if request == 4 {
+                beginCalibrationReadback()
+            }
+        }
+    }
+
+    private func beginCalibrationReadback() {
+        guard calibrationPhase == .acknowledgement, let usesCRC,
+              calibrationReadback.submissionCompleted() else { return }
+        calibrationPhase = .confirmation
+        writeControl(SmartGuideCalibration.lastRecord(usesCRC: usesCRC))
+    }
+
+    private func scheduleCalibrationReadback() {
+        let token = calibrationToken
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.performOnBluetoothQueue { [weak self] in
+                guard let self, self.calibrationToken == token, self.calibrationPhase == .confirmation,
+                      let usesCRC = self.usesCRC else { return }
+                // Read only. The existing 45-second deadline bounds polling.
+                self.writeControl(SmartGuideCalibration.lastRecord(usesCRC: usesCRC))
             }
         }
     }
@@ -634,6 +701,7 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
 
     private func finishCalibration(_ message: String) {
         guard calibrationPhase != .idle else { return }
+        diagnostic("Calibration result: \(message)")
         let completion = calibrationCompletion
         calibrationCompletion = nil
         calibrationInput = nil
@@ -643,11 +711,34 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
         DispatchQueue.main.async { completion?(message) }
     }
 
+    /// Timeouts are transport failures, not permanent pairing/protocol failures.
+    /// Leave reconnect permitted: the inherited disconnect callback immediately
+    /// queues a CoreBluetooth connect, including while the app is backgrounded.
+    /// No app timer is needed to re-enable a blocked collector after suspension.
+    private func recoverConnection(_ reason: String) {
+        guard !blocked else { return }
+        diagnostic("\(reason); reconnecting automatically")
+        generation = UUID()
+        initializationRequested = false
+        initializationToken = nil
+        awaitingInitialization = false
+        finishCalibration("Connection lost. Any sent calibration will not be repeated. Check its status after reconnecting.")
+        pending.removeAll()
+        statusRead.complete()
+        collectingHistory = false
+        adopted = false
+        connectedPeripheral = nil
+        publish("Reconnecting…")
+        disconnect()
+    }
+
     private func fail(_ text: String) {
         initializationRequested = false
         initializationToken = nil
         finishCalibration("Calibration interrupted. Any sent value will not be repeated; check its status after reconnecting.")
-        blocked = true // No rapid bond/retry loop. Retry is explicit.
+        blocked = true // Protocol/identity failures require explicit retry.
+        generation = UUID()
+        statusRead.complete()
         pending.removeAll()
         seen.removeAll()
         publish(text)
@@ -675,6 +766,7 @@ final class CGMSmartGuideTransmitter: BluetoothTransmitter, CGMTransmitter {
             self.awaitingInitialization = false
             self.finishCalibration("Connection paused. Any sent calibration will not be repeated.")
             self.generation = UUID()
+            self.statusRead.complete()
             self.pending.removeAll()
             self.seen.removeAll()
             self.publish("Connection paused")

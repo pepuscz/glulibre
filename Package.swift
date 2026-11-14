@@ -16,8 +16,8 @@ let package = Package(
         .target(name: "WatchCompanionCore", path: "xDrip/Managers/Watch", exclude: ["WatchManager.swift"], sources: ["WatchState.swift"]),
         .testTarget(name: "WatchCompanionCoreTests", dependencies: ["WatchCompanionCore"], path: "Tests/WatchCore"),
         .target(name: "GlucoseObservationCore", path: "xDrip/Experience",
-                exclude: ["JournalModel.swift", "JournalViews.swift", "JournalExperienceCoordinator.swift", "JournalPreferences.swift", "JournalSettingsViews.swift", "JournalHealthContext.swift", "JournalInsightsView.swift", "FoodLibraryViews.swift", "MealEditView.swift", "JournalManagement.swift", "JournalManagementViews.swift", "JournalNutritionView.swift", "JournalServiceView.swift", "JournalBackupService.swift", "JournalBackupView.swift", "JournalMovementViews.swift"],
-                sources: ["GlucoseObservations.swift", "ReadingNotificationPolicy.swift", "GlucoseReference.swift", "FoodResponseCore.swift", "MealPhotoTime.swift", "JournalBackupArchive.swift", "MealMovement.swift"]),
+                exclude: ["JournalEarlierReadingsView.swift", "JournalModel.swift", "JournalViews.swift", "JournalExperienceCoordinator.swift", "JournalPreferences.swift", "JournalSettingsViews.swift", "JournalHealthContext.swift", "JournalInsightsView.swift", "FoodLibraryViews.swift", "MealEditView.swift", "JournalManagement.swift", "JournalManagementViews.swift", "JournalNutritionView.swift", "JournalServiceView.swift", "JournalBackupService.swift", "JournalBackupView.swift", "JournalMovementViews.swift"],
+                sources: ["GlucoseObservations.swift", "GlucoseAdjustment.swift", "ReadingNotificationPolicy.swift", "GlucoseReference.swift", "FoodResponseCore.swift", "MealPhotoTime.swift", "JournalBackupArchive.swift", "MealMovement.swift"]),
         .testTarget(name: "GlucoseObservationCoreTests", dependencies: ["GlucoseObservationCore"], path: "Tests/ObservationCore")
     ]
 )

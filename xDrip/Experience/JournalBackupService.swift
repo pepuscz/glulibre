@@ -69,7 +69,8 @@ final class JournalBackupController: ObservableObject {
                 let encrypted = try await Task.detached(priority: .userInitiated) {
                     let (meals, photos) = try MealStore.shared.backupSnapshot()
                     let all = JournalBackupArchive.merging(existing: readings, incoming: try JournalRecoveredHistory.shared.all())
-                    let archive = JournalBackupArchive(createdAt: Date(), appVersion: version, mealsJSON: meals, photos: photos, readings: all)
+                    let archive = JournalBackupArchive(createdAt: Date(), appVersion: version, mealsJSON: meals, photos: photos, readings: all,
+                        adjustments: try GlucoseAdjustmentStore.shared.all())
                     try archive.validate()
                     return try JournalBackupCipher.seal(JSONEncoder().encode(archive), password: password)
                 }.value
@@ -129,6 +130,7 @@ final class JournalBackupController: ObservableObject {
                     guard MealStore.shared.loadError == nil else { throw JournalBackupError.unavailable }
                     let readings = try JournalRecoveredHistory.shared.merge(preview.archive.readings.filter { !liveIDs.contains($0.id) })
                     let meals = try MealStore.shared.restoreMissing(preview.meals, photos: preview.archive.photos)
+                    try GlucoseAdjustmentStore.shared.merge(preview.archive.adjustments ?? [])
                     return (meals, readings)
                 }.value
                 self.preview = nil

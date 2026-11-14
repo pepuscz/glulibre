@@ -43,8 +43,10 @@ struct JournalBackupArchive: Codable {
     let mealsJSON: Data
     let photos: [String: BackupPhoto]
     let readings: [BackupReading]
+    var adjustments: [GlucoseAdjustment]? = nil
 
     func validate() throws {
+        guard (adjustments ?? []).count <= 10000, (adjustments ?? []).allSatisfy(\.valid) else { throw JournalBackupError.invalidArchive }
         guard version == 1 else { throw JournalBackupError.unsupportedVersion }
         guard createdAt.timeIntervalSince1970.isFinite,
               mealsJSON.count <= 32 * 1024 * 1024,

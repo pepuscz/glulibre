@@ -16,6 +16,44 @@ enum SmartGuideProtocol {
 
     enum Failure: Error { case malformed, checksum, unsupported, invalidClock }
 
+    /// Restored CBService objects may already contain cached characteristics.
+    /// Only fresh discovery callbacks establish that our own map is complete.
+    struct Discovery {
+        enum Result: Equatable { case waiting, ready, unsupported }
+        static let services: Set<String> = ["180A", SmartGuideProtocol.service]
+        static let required: Set<String> = ["2A29", "2A24", "2A25", feature, status, sessionStart, measurement, recordAccess]
+        private var completed = Set<String>()
+        private var found = Set<String>()
+        private var finished = false
+
+        mutating func received(service: String, characteristics: Set<String>) -> Result {
+            guard !finished, Self.services.contains(service) else { return .waiting }
+            completed.insert(service)
+            found.formUnion(characteristics)
+            guard Self.services.isSubset(of: completed) else { return .waiting }
+            finished = true
+            return Self.required.isSubset(of: found) ? .ready : .unsupported
+        }
+    }
+
+    /// One outstanding status request. A completed/cancelled request must never
+    /// let an old watchdog interrupt a later connection or a newer read.
+    struct StatusRead {
+        private var token: UUID?
+        mutating func begin() -> UUID? {
+            guard token == nil else { return nil }
+            let next = UUID()
+            token = next
+            return next
+        }
+        mutating func complete() { token = nil }
+        mutating func expire(_ candidate: UUID) -> Bool {
+            guard token == candidate else { return false }
+            token = nil
+            return true
+        }
+    }
+
     // Independent CGMS date-time encoder. Reference behavior: AccuChekKit
     // 4f8c3a8, PairingAdapter.getSensorStatus; no upstream code is incorporated.
     static func initializationAllowed(status: Status, minutes: Int, saved: Date?, reported: Date?, attempted: Bool) -> Bool {

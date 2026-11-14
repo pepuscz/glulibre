@@ -149,6 +149,13 @@ private struct JournalLegalText: View {
 struct JournalSensorView: View {
     @ObservedObject var model: JournalModel
     @ObservedObject var management: JournalManagement
+    @ObservedObject private var smartGuide = SmartGuideConnectionState.shared
+    @State private var calibrating = false
+    private var calibrationSerial: String? {
+        if let serial = management.activeSmartGuideSerial { return serial }
+        if JournalModel.isSimulatorUITest && !smartGuide.serial.isEmpty { return smartGuide.serial }
+        return nil
+    }
     var body: some View {
         List {
             Section {
@@ -162,6 +169,17 @@ struct JournalSensorView: View {
                     if model.latest != nil { Text(model.freshness).font(.subheadline).foregroundStyle(.secondary) }
                     if management.isWarmingUp, let end = management.warmupEnd { Text(end, style: .timer).font(.title.monospacedDigit()) }
                 }.padding(.vertical, 8)
+            }
+            if let serial = calibrationSerial {
+                Section {
+                    Button("Calibrate with meter") { calibrating = true }
+                        .accessibilityIdentifier("sensor.calibrate")
+                    NavigationLink("Earlier readings") { JournalEarlierReadingsView(management: management, serial: serial) }
+                        .accessibilityIdentifier("sensor.earlier")
+                    if !smartGuide.calibrationResult.isEmpty {
+                        Text(smartGuide.calibrationResult).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
             }
             if model.sensor.hasDevice {
                 Section("Connection") {
@@ -191,6 +209,11 @@ struct JournalSensorView: View {
                 NavigationLink("Device details") { JournalDeviceDetailsView(management: management) }
             }
         }.navigationTitle("Sensor").navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $calibrating) {
+                if let serial = calibrationSerial {
+                    SmartGuideCalibrationView(management: management, serial: serial)
+                }
+            }
             .onAppear { model.refreshSensor(); management.refresh() }
             .refreshable { model.refresh(); model.refreshSensor() }
             .journalManagementMessage(management)
