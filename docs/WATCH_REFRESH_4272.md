@@ -19,7 +19,7 @@ The code requested a timeline reload for accepted snapshots even when only deliv
 
 All 131 Foundation tests passed, including five refresh regressions covering lifecycle bursts, unchanged values with new timestamps, meal/backfill isolation, relaunch timing and quota exhaustion. Combined signed iPhone/Watch build passed.
 
-Installed and launched 4272 on the physical iPhone and Watch Ultra; versions were read back. The provider recorded a newly generated timeline using the same reading as the phone. All 7,019 pre-update readings and sensor records were unchanged. This proves a provider refresh after installation; sustained background timing and battery consumption require longer observation. WidgetKit retains control of display scheduling.
+Installed and launched 4272 on the physical iPhone and Watch Ultra; versions were read back. The provider recorded a newly generated timeline using the same reading as the phone. The following sensor reading also reached a new provider timeline about eight seconds after its timestamp. All 7,019 pre-update readings, sensor records, 42 existing meal records and saved adjustments were unchanged; a new meal and photo were added during the check. This proves successive provider refreshes after installation; sustained background timing, on-face rendering and battery consumption require longer observation. WidgetKit retains control of display scheduling.
 
 ## Apple references
 
