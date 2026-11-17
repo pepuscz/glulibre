@@ -30,7 +30,8 @@ final class WatchManager: NSObject, ObservableObject {
     private var watchState = WatchState()
     
     /// keep track of when we last forced a complication update from within the code
-    private var lastForcedComplicationUpdateTimeStamp: Date = .distantPast
+    private let priorityTimeKey = "journal.watch.priorityTransferTime.v1"
+    private let priorityContentKey = "journal.watch.priorityContent.v1"
     private var mealObserver: NSObjectProtocol?
     
     /// for logging
@@ -217,35 +218,40 @@ final class WatchManager: NSObject, ObservableObject {
             return
         }
         
-        // if the WCSession is reachable it means that Watch app is in the foreground so send the watch state as a message
-        // if it's not reachable, then it means it's in the background so send the state as a userInfo
-        // if more than x minutes have passed since the last complication update, call transferCurrentComplicationUserInfo to force an update
-        // if not, then just send it as a normal priority transferUserInfo (but limit the sending to once every 5 minutes!) which will be queued and sent as soon as the watch app is reachable again (this will help get the app showing data quicker)
-        if let userInfo: [String: Any] = watchState.asDictionary {
-            // Replace the pending snapshot instead of queuing every minute of history.
+        guard let userInfo = watchState.asDictionary else { return }
+        // Context replaces pending history. Do not retransmit identical content merely
+        // because processWatchState was called by another UI/lifecycle callback.
+        let previous = session.applicationContext["watchState"] as? [String: Any]
+        if previous.flatMap(WatchState.deliveryContent) != WatchState.deliveryContent(userInfo) {
             do { try session.updateApplicationContext(["watchState": userInfo]) }
             catch { trace("watch context update failed: %{public}@", log: log, category: ConstantsLog.categoryWatchManager, type: .error, error.localizedDescription) }
-            if session.isReachable {
-                session.sendMessage(["watchState": userInfo], replyHandler: nil, errorHandler: { [weak self] error in
-                    guard let self = self else { return }
-                    trace("error sending watch state, error = %{public}@", log: self.log, category: ConstantsLog.categoryWatchManager, type: .error, error.localizedDescription)
-                })
-            } else {
-                if (lastForcedComplicationUpdateTimeStamp < .now.addingTimeInterval(-Double(UserDefaults.standard.forceComplicationUpdateInMinutes * 60)) && session.isComplicationEnabled && UserDefaults.standard.showDataInWatchComplications) || forceComplicationUpdate {
-                    let updateType: String = forceComplicationUpdate ? "forcing" : "sending"
-                    
-                    trace("%{public}@ background complication update every %{public}@ minutes, remaining complication transfers left today: %{public}@ / 50", log: log, category: ConstantsLog.categoryWatchManager, type: .info, updateType, UserDefaults.standard.forceComplicationUpdateInMinutes.description, session.remainingComplicationUserInfoTransfers.description)
-                    
-                    session.transferCurrentComplicationUserInfo(["watchState": userInfo])
-                    lastForcedComplicationUpdateTimeStamp = .now
-                    UserDefaults.standard.remainingComplicationUserInfoTransfers = session.remainingComplicationUserInfoTransfers
-                } else {
-                    trace("sending background watch state update", log: log, category: ConstantsLog.categoryWatchManager, type: .debug)
-                    
-                    // Application context already carries the newest background state.
-                }
-            }
         }
+        if session.isReachable {
+            // A foreground request must still receive a reply even for an unchanged reading.
+            session.sendMessage(["watchState": userInfo], replyHandler: nil, errorHandler: { [weak self] error in
+                guard let self = self else { return }
+                trace("error sending watch state, error = %{public}@", log: self.log, category: ConstantsLog.categoryWatchManager, type: .error, error.localizedDescription)
+            })
+            return
+        }
+        let content = watchState.complicationContent
+        let defaults = UserDefaults.standard
+        let previousPriority = defaults.data(forKey: priorityContentKey)
+            .flatMap { try? JSONDecoder().decode(WatchComplicationContent.self, from: $0) }
+        guard content != previousPriority,
+              WatchComplicationRefreshPolicy.shouldSendPriority(now: .now,
+                lastSent: defaults.object(forKey: priorityTimeKey) as? Date,
+                requestedInterval: Double(UserDefaults.standard.forceComplicationUpdateInMinutes) * 60,
+                remaining: session.remainingComplicationUserInfoTransfers,
+                active: session.isComplicationEnabled, visible: content.visible,
+                forced: forceComplicationUpdate),
+              let encoded = try? JSONEncoder().encode(content) else { return }
+        session.transferCurrentComplicationUserInfo(["watchState": userInfo])
+        defaults.set(Date(), forKey: priorityTimeKey)
+        defaults.set(encoded, forKey: priorityContentKey)
+        UserDefaults.standard.remainingComplicationUserInfoTransfers = session.remainingComplicationUserInfoTransfers
+        trace("sent priority complication update; remaining transfers: %{public}@", log: log,
+              category: ConstantsLog.categoryWatchManager, type: .info, session.remainingComplicationUserInfoTransfers.description)
     }
     
     // MARK: - Public functions

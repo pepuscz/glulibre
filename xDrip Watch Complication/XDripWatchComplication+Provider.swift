@@ -26,8 +26,14 @@ extension XDripWatchComplication {
             let state = getWidgetStateFromSharedUserDefaults() ?? .init()
             let entries = WatchGlancePolicy.timelineDates(readingDate: state.bgReadingDate, now: now)
                 .map { Entry(date: $0, widgetState: state) }
+            if !context.isPreview, let defaults = UserDefaults(suiteName: Bundle.main.appGroupSuiteName) {
+                // Bounded diagnostics distinguish delivery from actual timeline generation.
+                defaults.set(now, forKey: WatchComplicationRefreshPolicy.timelineTimeKey)
+                defaults.set(state.bgReadingDate, forKey: WatchComplicationRefreshPolicy.timelineReadingKey)
+            }
             // A scheduled stale entry retires the value even if the phone stops sending.
-            completion(.init(entries: entries, policy: .after(now.addingTimeInterval(15 * 60))))
+            // New data requests a reload; this is only a conservative cache-recovery fallback.
+            completion(.init(entries: entries, policy: .after(now.addingTimeInterval(30 * 60))))
         }
     }
 }

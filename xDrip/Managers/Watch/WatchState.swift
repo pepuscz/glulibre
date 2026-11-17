@@ -8,6 +8,34 @@
 
 import Foundation
 
+/// Only fields rendered by the complication. Delivery timestamps, meal updates,
+/// historical backfill and transfer quotas must not spend its reload budget.
+struct WatchComplicationContent: Codable, Equatable {
+    let value: Double?
+    let readingTime: Double?
+    let isMgDl: Bool
+    let slope: Int
+    let visible: Bool
+    let trendOnly: Bool
+}
+
+enum WatchComplicationRefreshPolicy {
+    static let kind = "xDripWatchComplication"
+    static let contentKey = "journal.complication.requestedContent.v1"
+    static let reloadTimeKey = "journal.complication.reloadTime.v1"
+    static let timelineTimeKey = "journal.complication.timelineTime.v1"
+    static let timelineReadingKey = "journal.complication.timelineReading.v1"
+
+    static func shouldSendPriority(now: Date, lastSent: Date?, requestedInterval: TimeInterval,
+                                   remaining: Int, active: Bool, visible: Bool, forced: Bool) -> Bool {
+        guard active, remaining > 0, visible || forced else { return false }
+        if forced { return true }
+        guard let lastSent, lastSent <= now else { return true }
+        // At most 48 routine priority wakes per day, within Apple's 50-transfer budget.
+        return now.timeIntervalSince(lastSent) >= max(30 * 60, requestedInterval)
+    }
+}
+
 /// model of the data we'll use to manage the watch views
 struct WatchState: Codable {
     var bgReadingValues: [Double] = []
@@ -48,6 +76,20 @@ struct WatchState: Codable {
     var asDictionary: [String: Any]? {
         guard let data = try? JSONEncoder().encode(self) else { return nil }
         return (try? JSONSerialization.jsonObject(with: data, options: .allowFragments)).flatMap { $0 as? [String: Any] }
+    }
+
+    var complicationContent: WatchComplicationContent {
+        WatchComplicationContent(value: bgReadingValues.first, readingTime: bgReadingDatesAsDouble.first,
+            isMgDl: isMgDl ?? true, slope: slopeOrdinal ?? 0,
+            visible: liveDataIsEnabled ?? false, trendOnly: isTrendOnly ?? false)
+    }
+
+    static func deliveryContent(_ snapshot: [String: Any]) -> Data? {
+        var content = snapshot
+        for key in ["generatedAt", "sensorAgeInMinutes", "remainingComplicationUserInfoTransfers"] {
+            content.removeValue(forKey: key)
+        }
+        return try? JSONSerialization.data(withJSONObject: content, options: [.sortedKeys])
     }
 }
 

@@ -11,7 +11,7 @@ import SwiftUI
 
 @main
 struct XDripWatchComplication: Widget {
-    let kind: String = "xDripWatchComplication"
+    let kind: String = WatchComplicationRefreshPolicy.kind
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: Provider()) { entry in

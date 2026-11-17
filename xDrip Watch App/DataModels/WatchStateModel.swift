@@ -598,9 +598,17 @@ final class WatchStateModel: NSObject, ObservableObject {
             sharedUserDefaults.set(stateData, forKey: "complicationSharedUserDefaults.\(Bundle.main.mainAppBundleIdentifier)")
         }
         
-        // now that the new data is stored in the app group, try to force the complications to reload
-        WidgetCenter.shared.reloadAllTimelines()
-        
+        let content = WatchComplicationContent(value: bgReadingValues.first,
+            readingTime: bgReadingDatesAsDouble.first, isMgDl: isMgDl,
+            slope: slopeOrdinal, visible: liveDataIsEnabled, trendOnly: isTrendOnly)
+        let previous = sharedUserDefaults.data(forKey: WatchComplicationRefreshPolicy.contentKey)
+            .flatMap { try? JSONDecoder().decode(WatchComplicationContent.self, from: $0) }
+        guard content != previous, let encoded = try? JSONEncoder().encode(content) else { return }
+        // Persist across background launches: loading the cache or receiving the
+        // same reading by another transport must not request another timeline.
+        sharedUserDefaults.set(encoded, forKey: WatchComplicationRefreshPolicy.contentKey)
+        sharedUserDefaults.set(Date(), forKey: WatchComplicationRefreshPolicy.reloadTimeKey)
+        WidgetCenter.shared.reloadTimelines(ofKind: WatchComplicationRefreshPolicy.kind)
         lastComplicationUpdateTimeStamp = .now
     }
     

@@ -63,7 +63,14 @@ extension XDripWatchComplication {
                             Image(systemName: statusSymbol).font(.caption2).widgetAccentable()
                         }
                         Text(value).font(.system(.title3, design: .rounded).weight(.semibold)).minimumScaleFactor(0.7)
-                        Text(fresh ? arrow : unavailableLabel).font(.caption2)
+                        if !fresh, entry.widgetState.liveDataIsEnabled, let date = entry.widgetState.bgReadingDate, date <= entry.date {
+                            // A system-managed relative date keeps aging while the
+                            // extension is suspended, without requesting another reload.
+                            Text(date, style: .relative).font(.caption2)
+                                .lineLimit(1).minimumScaleFactor(0.6)
+                        } else {
+                            Text(fresh ? arrow : unavailableLabel).font(.caption2)
+                        }
                     }
                 case .accessoryCorner:
                     Text(value).font(.title3.weight(.semibold))
